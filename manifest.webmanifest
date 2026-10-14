@@ -1,15 +1,15 @@
 {
-  "name": "Lớp của thầy Định",
-  "short_name": "Lớp học",
-  "description": "Quản lý lớp dạy thêm: điểm danh, học phí, báo cáo phụ huynh. Dữ liệu chỉ lưu trên máy.",
+  "name": "Sổ Lớp · by Đ-LAB",
+  "short_name": "Sổ Lớp",
+  "description": "Quản lý lớp dạy thêm: điểm danh, học phí, nhắc phụ huynh, báo cáo. Dữ liệu chỉ lưu trên máy.",
   "lang": "vi",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f6f0",
-  "theme_color": "#2e8b57",
+  "background_color": "#f3f5fb",
+  "theme_color": "#13306a",
   "icons": [
-    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
     {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
   ]
 }

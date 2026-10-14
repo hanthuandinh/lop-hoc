@@ -1,24 +1,28 @@
-# Lớp của thầy Định
+# Sổ Lớp · by Đ-LAB
 
-App quản lý lớp dạy thêm chạy trên điện thoại: điểm danh, học phí, nhắc phụ huynh qua Zalo, báo cáo, xuất Excel.
+Ứng dụng quản lý lớp dạy thêm cho thầy cô: điểm danh, học phí, mã QR chuyển khoản, nhắc phụ huynh qua Zalo, thông báo chung, báo cáo và xuất Excel. Dùng được trên điện thoại và máy tính.
 
 ## Dữ liệu có an toàn không?
 
-- Mã nguồn app này công khai, nhưng **dữ liệu học sinh và phụ huynh không có ở đây**.
-- Dữ liệu chỉ lưu trong trình duyệt trên máy của người dùng (IndexedDB). App không có máy chủ và không gửi dữ liệu đi đâu.
-- App đặt chính sách bảo mật nội dung (Content-Security-Policy) để chặn mọi kết nối tới máy chủ khác.
-- Có sao lưu ra file mã hóa AES-256 bằng mật khẩu, và mã PIN để khóa màn hình.
+- Mã nguồn công khai, nhưng **dữ liệu học sinh và phụ huynh không có ở đây**.
+- Dữ liệu chỉ lưu trong trình duyệt trên máy người dùng (IndexedDB). App không có máy chủ.
+- Chính sách bảo mật nội dung (CSP) chặn mọi kết nối tới máy chủ khác. Mã QR được tạo ngay trên máy (`qr.js`).
+- Sao lưu ra file mã hóa AES-256 bằng mật khẩu. Có mã PIN khóa màn hình.
 
-## Cài lên điện thoại
+## Cài lên máy
 
-- iPhone: mở link bằng Safari → nút Chia sẻ → "Thêm vào MH chính".
-- Android: mở link bằng Chrome → menu ⋮ → "Cài đặt ứng dụng".
+- iPhone: mở link bằng Safari → Chia sẻ → "Thêm vào MH chính". Luôn mở app từ biểu tượng này.
+- Android: Chrome → menu ⋮ → "Cài đặt ứng dụng".
+- Máy tính: Chrome/Edge → biểu tượng cài đặt ở cuối thanh địa chỉ.
 
 ## Các file
 
 | File | Vai trò |
 |---|---|
-| `index.html` | Toàn bộ giao diện và code của app |
-| `sw.js` | Service worker: lưu sẵn app để mở được khi không có mạng |
-| `manifest.webmanifest` | Thông tin để cài app vào màn hình chính |
-| `icon-*.png` | Biểu tượng app |
+| `index.html` | Giao diện và code chính |
+| `qr.js` | Bộ tạo mã QR (chạy trên máy) |
+| `sw.js` | Service worker: cho app chạy khi mất mạng |
+| `manifest.webmanifest` | Thông tin cài app vào màn hình chính |
+| `logo.png`, `mark.png`, `icon-*.png`, `favicon.png` | Logo và biểu tượng Đ-LAB |
+
+Biểu tượng giao diện dựa trên Feather Icons (MIT). © Đ-LAB · Nơi ý tưởng được tạo nên.
