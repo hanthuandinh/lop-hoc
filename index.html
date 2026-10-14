@@ -160,6 +160,14 @@ textarea{min-height:130px;resize:vertical}
 #lk .logo{background:#fff;border-radius:20px;padding:14px;width:84px;margin:0 auto 12px}
 .about img.full{width:100%;max-width:360px;display:block;margin:6px auto 4px;background:#fff;border-radius:16px;padding:10px}
 .schip{display:inline-flex;align-items:center;gap:6px;margin-top:10px;border:0;border-radius:20px;padding:6px 12px;background:rgba(255,255,255,.16);color:#fff;font-family:inherit;font-size:13px;cursor:pointer}.schip svg.i{width:15px;height:15px}.schip.warn{background:var(--or)}
+.stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.ra{display:flex;gap:8px;flex:none}
+@media(max-width:600px){
+  .stats{grid-template-columns:1fr;gap:0;border:1px solid var(--ln);border-radius:14px;overflow:hidden}
+  .stat{display:flex;justify-content:space-between;align-items:center;border:0;border-radius:0;border-bottom:1px solid var(--ln);padding:10px 14px}
+  .stat:last-child{border-bottom:0}.stat b{font-size:17px}.stat small{font-size:14px}
+  .fee .ra{flex-basis:100%;padding-left:48px}.fee .ra .btn{flex:1;padding:10px 12px}
+}
 [hidden]{display:none!important}
 
 /* Máy tính / màn hình rộng */
@@ -206,7 +214,7 @@ textarea{min-height:130px;resize:vertical}
    Chạy 100% trên máy, không gửi dữ liệu đi đâu.
    Dữ liệu lưu trong IndexedDB (kho của trình duyệt) + bản dự phòng localStorage.
    ========================================================= */
-const VERSION='1.3.1';
+const VERSION='1.3.2';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -227,7 +235,8 @@ const dLong=s=>{const t=toDate(s);return DNF[t.getDay()]+', ngày '+t.getDate()+
 const nowHM=()=>{const t=new Date();return p2(t.getHours())+':'+p2(t.getMinutes())};
 const digits=p=>String(p||'').replace(/\D/g,'');
 const phoneLocal=p=>{let d=digits(p);if(d.startsWith('84')&&d.length>=11)d='0'+d.slice(2);return d};
-const initial=n=>(String(n).trim().split(/\s+/).pop()||'?').slice(0,1).toUpperCase();
+// Chữ cái đầu của tên (bỏ qua số/điểm ở cuối tên, ví dụ "Nguyễn An 4.7" → "A")
+const initial=n=>{const w=String(n).trim().split(/\s+/).filter(x=>/^\p{L}/u.test(x));return((w.pop()||'?').charAt(0)).toLocaleUpperCase('vi')};
 const ascii=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').replace(/[^A-Za-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
 
 /* ---------- Biểu tượng (vẽ bằng SVG, dựa trên bộ Feather) ---------- */
@@ -436,7 +445,7 @@ function vFees(){const list=S.students.filter(s=>enrolled(s,fm)||paidOf(s.id,fm)
   if(!list.length)return h+'<div class="card">Tháng này chưa có học sinh nào.</div>';
   return h+`<div class="cols">`+grp('Chưa nộp','no','r')+grp('Nộp thiếu','part','y')+grp('Đã nộp đủ','ok','ok')+grp('Không tính phí','free','')+`</div>`}
 function feeRow({s,f}){const c=cls(s.classId);
-  return`<div class="row"><button class="arow" data-a="paydt" data-id="${s.id}"><i class="av">${esc(initial(s.name))}</i><span class="gr"><b>${esc(s.name)}</b><small>${esc(c?c.name:'')} · ${money(f.due)}${f.st==='part'?` · đã nộp ${money(f.paid)}, còn ${money(f.rest)}`:''}</small></span></button>${f.st==='no'||f.st==='part'?`<button class="btn sm gh" data-a="nhac" data-id="${s.id}">Nhắc</button><button class="btn sm" data-a="payfull" data-id="${s.id}">Thu ${f.st==='part'?'nốt':'đủ'}</button>`:f.st==='ok'?`<button class="btn sm gh" data-a="paydt" data-id="${s.id}">✓ Đã thu</button>`:''}</div>`}
+  return`<div class="row fee"><button class="arow" data-a="paydt" data-id="${s.id}"><i class="av">${esc(initial(s.name))}</i><span class="gr"><b>${esc(s.name)}</b><small>${esc(c?c.name:'')} · ${money(f.due)}${f.st==='part'?` · đã nộp ${money(f.paid)}, còn ${money(f.rest)}`:''}</small></span></button>${f.st==='no'||f.st==='part'?`<div class="ra"><button class="btn sm gh" data-a="nhac" data-id="${s.id}">Nhắc</button><button class="btn sm" data-a="payfull" data-id="${s.id}">Thu ${f.st==='part'?'nốt':'đủ'}</button></div>`:f.st==='ok'?`<button class="btn sm gh" data-a="paydt" data-id="${s.id}">✓ Đã thu</button>`:''}</div>`}
 function payDetail(s){const f=feeState(s,fm),ps=S.pays.filter(p=>p.sid===s.id&&p.month===fm);
   sheet(`<h3>${esc(s.name)} · ${mLabel(fm)}</h3><p class="sub">Phải nộp ${money(f.due)} · Đã nộp ${money(f.paid)} · Còn ${money(f.rest)}</p>${ps.length?`<div class="list">${ps.map(p=>`<div class="row"><div class="gr"><b>${money(p.amount)}</b><small>Ngày ${p.date.split('-').reverse().join('/')}${p.how?' · '+esc(p.how):''}</small></div><button class="btn sm rd" data-a="delpay" data-id="${p.id}">Xóa</button></div>`).join('')}</div>`:''}<label>Số tiền thu<input id="pa" class="money" type="text" inputmode="numeric" autocomplete="off" value="${f.rest?fmtN(f.rest):''}"></label><div class="two"><label>Ngày thu<input id="pd" type="date" value="${today()}"></label><label>Hình thức<select id="ph"><option>Tiền mặt</option><option>Chuyển khoản</option></select></label></div><button class="btn" data-a="savepay" data-id="${s.id}">Lưu khoản thu</button>${f.rest?`<button class="btn gh" data-a="nhac" data-id="${s.id}">Soạn tin nhắc học phí</button>`:''}`)}
 function addPay(sid,amount,date,how){const p={id:uid(),sid,month:fm,amount,date,how};S.pays.push(p);keep();return p}
