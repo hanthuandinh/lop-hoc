@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<!-- CSP: chặn app gửi dữ liệu tới bất kỳ máy chủ nào khác. Chỉ dùng file của chính app. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<!-- CSP: chỉ cho phép kết nối tới chính app và Google (khi bật đồng bộ Drive). Mọi máy chủ khác bị chặn. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src 'self' data: blob:; connect-src 'self' https://www.googleapis.com https://accounts.google.com; frame-src https://accounts.google.com; form-action 'none'; base-uri 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#13306a">
 <meta name="mobile-web-app-capable" content="yes">
@@ -151,6 +151,7 @@ textarea{min-height:130px;resize:vertical}
 #lk .btn{background:var(--or);color:#fff}
 #lk .logo{background:#fff;border-radius:20px;padding:14px;width:84px;margin:0 auto 12px}
 .about img.full{width:100%;max-width:360px;display:block;margin:6px auto 4px;background:#fff;border-radius:16px;padding:10px}
+.schip{display:inline-flex;align-items:center;gap:6px;margin-top:10px;border:0;border-radius:20px;padding:6px 12px;background:rgba(255,255,255,.16);color:#fff;font-family:inherit;font-size:13px;cursor:pointer}.schip svg.i{width:15px;height:15px}.schip.warn{background:var(--or)}
 [hidden]{display:none!important}
 
 /* Máy tính / màn hình rộng */
@@ -181,7 +182,7 @@ textarea{min-height:130px;resize:vertical}
 <aside id="side">
   <div class="brand"><img src="mark.png" alt=""><div><b>Sổ Lớp</b><small>by Đ-LAB</small></div></div>
   <nav id="sidenav"></nav>
-  <div class="foot">Dữ liệu chỉ lưu trên máy này.<br>Đ-LAB · Nơi ý tưởng được tạo nên</div>
+  <div class="foot">Dữ liệu của bạn, do bạn giữ.<br>Đ-LAB · Nơi ý tưởng được tạo nên</div>
 </aside>
 <main id="app"></main>
 <nav id="bot"></nav>
@@ -195,7 +196,7 @@ textarea{min-height:130px;resize:vertical}
    Chạy 100% trên máy, không gửi dữ liệu đi đâu.
    Dữ liệu lưu trong IndexedDB (kho của trình duyệt) + bản dự phòng localStorage.
    ========================================================= */
-const VERSION='1.1.0';
+const VERSION='1.2.0';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -264,7 +265,7 @@ function idb(){return new Promise((ok,no)=>{const r=indexedDB.open(DBN,1);r.onup
 async function dbGet(){try{const d=await idb();return await new Promise((ok,no)=>{const q=d.transaction(ST).objectStore(ST).get('state');q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}catch(e){return null}}
 async function dbPut(txt){try{const d=await idb();await new Promise((ok,no)=>{const t=d.transaction(ST,'readwrite');t.objectStore(ST).put(txt,'state');t.oncomplete=ok;t.onerror=()=>no(t.error)})}catch(e){}}
 let saveQ=Promise.resolve();
-function save(){S.savedAt=Date.now();const txt=JSON.stringify(S);try{localStorage.setItem(LS,txt)}catch(e){}saveQ=saveQ.then(()=>dbPut(txt));askPersist()}
+function save(){if(typeof stamp==='function')stamp();S.savedAt=Date.now();const txt=JSON.stringify(S);try{localStorage.setItem(LS,txt)}catch(e){}saveQ=saveQ.then(()=>dbPut(txt));askPersist();if(typeof queueSync==='function')queueSync()}
 async function load(){let a=null,b=null;try{const t=await dbGet();if(t)a=JSON.parse(t)}catch(e){}try{const t=localStorage.getItem(LS);if(t)b=JSON.parse(t)}catch(e){}
   S=normalize([a,b].filter(Boolean).sort((x,y)=>(y.savedAt||0)-(x.savedAt||0))[0])}
 let persisted=null;
@@ -308,7 +309,7 @@ function msgSheet(title,s,text,top,bottom){sheet(`<h3>${title}</h3>${s?contactLi
 function greet(){const h=new Date().getHours();return h<11?'Chào buổi sáng':h<13?'Chào buổi trưa':h<18?'Chào buổi chiều':'Chào buổi tối'}
 function tile(o){return`<button class="tile" style="--tc:${o.c}" data-a="${o.a}" ${o.v?`data-v="${o.v}"`:''}><span class="tic">${ic(o.i)}</span><b>${o.t}</b><small class="sub">${o.s}</small>${ic('chev','chev')}${o.b?`<span class="badge ${o.bc||''}">${o.b}</span>`:''}</button>`}
 function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),todayC=S.classes.filter(c=>c.days.includes(t.getDay()));
-  let h=`<div class="top"><div class="toprow"><div class="gr"><small>${DNF[t.getDay()]}, ${t.getDate()}/${t.getMonth()+1}/${t.getFullYear()}</small><h1>${esc(S.set.title)}</h1><div class="hi">${greet()}${S.set.name?', '+esc(who()):''} 👋</div><small>Chúc ${esc(S.set.xung)} một ngày dạy thật vui!</small></div><button class="ava" data-a="tab" data-v="more" aria-label="Cài đặt"><img src="mark.png" alt=""></button></div></div>
+  let h=`<div class="top"><div class="toprow"><div class="gr"><small>${DNF[t.getDay()]}, ${t.getDate()}/${t.getMonth()+1}/${t.getFullYear()}</small><h1>${esc(S.set.title)}</h1><div class="hi">${greet()}${S.set.name?', '+esc(who()):''} 👋</div><small>Chúc ${esc(S.set.xung)} một ngày dạy thật vui!</small>${syncChip()}</div><button class="ava" data-a="tab" data-v="more" aria-label="Cài đặt"><img src="mark.png" alt=""></button></div></div>
   <div class="sbox">${ic('search')}<input id="hq" type="search" placeholder="Tìm học sinh, số điện thoại…" value="${esc(qHome)}" autocomplete="off"></div><div id="hres">${homeSearch()}</div>`;
   if(!S.classes.length)return h+`<div class="card" style="margin-top:18px"><h2>Chào ${esc(S.set.xung)}! Bắt đầu trong 3 bước</h2><p class="sub">1. Thêm lớp (tên, ngày học, giờ, học phí).<br>2. Thêm học sinh (dán cả danh sách cũng được).<br>3. Điểm danh, thu học phí, gửi báo cáo cho phụ huynh.</p><button class="btn" data-a="addcls">+ Thêm lớp đầu tiên</button><button class="btn ln" data-a="restore">Tôi có file sao lưu, khôi phục lại</button><button class="btn ln" data-a="guide">Xem hướng dẫn sử dụng</button></div>`;
   h+=`<div class="lbl">Truy cập nhanh</div><div class="grid">`+[
@@ -456,7 +457,7 @@ function vMore(){const[,,a,b]=weekRange(),ws=weekStats(),y=String(ry);
   if(S.students.some(s=>!s.left))left+=`<div class="lbl">Báo cáo riêng từng em · ${mLabel(cm())}</div><div class="list">${S.students.filter(s=>!s.left).map(s=>{const t=stuAtt(s.id,d=>d.slice(0,7)===cm());return`<div class="row"><i class="av">${esc(initial(s.name))}</i><div class="gr"><b>${esc(s.name)}</b><small>Có mặt ${t.c}/${t.t} buổi</small></div><button class="btn sm gh" data-a="repstu" data-id="${s.id}">Soạn</button></div>`}).join('')}</div>`;
   let right=`<div class="lbl">Công cụ</div><div class="list">${item('#1aa3b5','msg','Thông báo chung','Nghỉ học, dạy bù, đổi lịch','announce')}${item('#4f5fd8','file','Xuất Excel','Học phí, điểm danh, danh sách','export')}${item('#5b6b86','cloud','Sao lưu ra file',S.lastBackup?'Lần cuối '+new Date(S.lastBackup).toLocaleDateString('vi-VN'):'Chưa sao lưu lần nào','backup','Sao lưu')}${item('#5b6b86','dl','Khôi phục dữ liệu','Từ file sao lưu hoặc app cũ','restore')}</div>`;
   if(!standalone)right+=`<div class="lbl">Cài app vào máy</div><div class="card"><small>Cài vào màn hình chính để mở nhanh, chạy cả khi mất mạng và dữ liệu được giữ bền hơn.<br><b>iPhone:</b> Safari → nút Chia sẻ → "Thêm vào MH chính".<br><b>Android:</b> Chrome → menu ⋮ → "Cài đặt ứng dụng".<br><b>Máy tính:</b> Chrome/Edge → biểu tượng cài đặt ở cuối thanh địa chỉ.</small>${installEvt?'<button class="btn or" data-a="install">Cài app ngay</button>':''}</div>`;
-  right+=`<div class="lbl">Cài đặt</div><div class="list">${item('#2453b8','sliders','Thông tin & tài khoản nhận tiền',`${esc(who())}${S.set.acc?' · STK '+esc(S.set.acc):' · chưa có STK'}`,'settings','Sửa')}${item('#7c5ce6','lock','Mã PIN khóa app',S.pin?'Đang bật':'Chưa bật','pin',S.pin?'Đổi':'Đặt')}${item('#22a565','help','Hướng dẫn sử dụng','Cài app, sao lưu, lưu ý iPhone','guide')}${item('#f08a24','info','Giới thiệu Sổ Lớp','Phiên bản '+VERSION+' · by Đ-LAB','about')}${item('#d64545','trash','Xóa toàn bộ dữ liệu','Dùng khi muốn làm lại từ đầu','wipe','Xóa')}</div><p class="hint" style="text-align:center">Không quảng cáo · Không theo dõi · Không gửi dữ liệu đi đâu</p>`;
+  right+=`<div class="lbl">Cài đặt</div><div class="list">${item('#1e9be9','cloud','Đồng bộ Google Drive',SC.on?'Đang bật · '+(SC.last?ago(SC.last):'chưa đồng bộ'):'Dùng chung dữ liệu điện thoại và máy tính','sync',SC.on?'Mở':'Bật')}${item('#2453b8','sliders','Thông tin & tài khoản nhận tiền',`${esc(who())}${S.set.acc?' · STK '+esc(S.set.acc):' · chưa có STK'}`,'settings','Sửa')}${item('#7c5ce6','lock','Mã PIN khóa app',S.pin?'Đang bật':'Chưa bật','pin',S.pin?'Đổi':'Đặt')}${item('#22a565','help','Hướng dẫn sử dụng','Cài app, sao lưu, lưu ý iPhone','guide')}${item('#f08a24','info','Giới thiệu Sổ Lớp','Phiên bản '+VERSION+' · by Đ-LAB','about')}${item('#d64545','trash','Xóa toàn bộ dữ liệu','Dùng khi muốn làm lại từ đầu','wipe','Xóa')}</div><p class="hint" style="text-align:center">Không quảng cáo · Không theo dõi · Không gửi dữ liệu đi đâu</p>`;
   return`<h1>Báo cáo & Công cụ</h1><p class="sub">${esc(who())} · ${S.classes.length} lớp</p><div class="cols"><div>${left}</div><div>${right}</div></div>`}
 function settingsForm(){const s=S.set;sheet(`<h3>Thông tin & tài khoản</h3><div class="two"><label>Xưng hô<select id="s2">${['Thầy','Cô','Anh','Chị','Em'].map(x=>`<option ${x===s.xung?'selected':''}>${x}</option>`).join('')}</select></label><label>Tên của bạn<input id="s6" value="${esc(s.name)}" placeholder="Định"></label></div><label>Tên hiển thị của app<input id="s1" value="${esc(s.title)}"></label><div class="lbl" style="font-size:15px">Tài khoản nhận học phí</div><p class="hint">Dùng để tạo mã QR và ghi kèm vào tin nhắc học phí.</p><label>Ngân hàng<select id="s3"><option value="">— Chọn ngân hàng —</option>${BANKS.map(b=>`<option value="${b[0]}" ${b[0]===s.bin?'selected':''}>${b[1]}</option>`).join('')}</select></label><label>Số tài khoản<input id="s4" inputmode="numeric" value="${esc(s.acc)}"></label><label>Chủ tài khoản (viết không dấu)<input id="s5" value="${esc(s.holder)}" placeholder="HAN THUAN DINH"></label><button class="btn" data-a="saveset">Lưu</button>`)}
 function guide(){sheet(`<h3>Hướng dẫn sử dụng</h3>
@@ -466,8 +467,8 @@ function guide(){sheet(`<h3>Hướng dẫn sử dụng</h3>
 <div class="row"><span class="ic" style="--tc:#22a565">3</span><div class="gr"><b>Điểm danh</b><small>Cả lớp mặc định có mặt, chỉ chạm vào bạn vắng (1 lần = có phép, 2 lần = không phép).</small></div></div>
 <div class="row"><span class="ic" style="--tc:#7c5ce6">4</span><div class="gr"><b>Học phí & mã QR</b><small>Vào Cài đặt nhập tài khoản ngân hàng, app tự tạo mã QR có sẵn số tiền để gửi phụ huynh.</small></div></div>
 <div class="row"><span class="ic" style="--tc:#5b6b86">5</span><div class="gr"><b>Sao lưu 2 tuần một lần</b><small>Dữ liệu chỉ nằm trên máy này. Lưu file sao lưu (có mật khẩu) vào Google Drive hoặc "Cloud của tôi" trên Zalo để phòng mất máy.</small></div></div></div>
-<p class="hint">🔒 Sổ Lớp không có máy chủ, không thu thập dữ liệu. Mỗi người dùng một link nhưng dữ liệu ai nấy giữ trên máy mình.</p>`)}
-function about(){sheet(`<div class="about"><img class="full" src="logo.png" alt="Đ-LAB"><h3 style="text-align:center;padding:0">Sổ Lớp <small>v${VERSION}</small></h3><p class="sub" style="text-align:center">Ứng dụng quản lý lớp dạy thêm cho thầy cô Việt Nam.<br>Phát triển bởi <b>Đ-LAB</b> · Nơi ý tưởng được tạo nên.</p><div class="list"><div class="row"><span class="ic" style="--tc:#22a565">${ic('lock')}</span><div class="gr"><b>Riêng tư tuyệt đối</b><small>Không máy chủ, không quảng cáo, không theo dõi. Dữ liệu chỉ nằm trên máy của bạn.</small></div></div><div class="row"><span class="ic" style="--tc:#2453b8">${ic('info')}</span><div class="gr"><b>Miễn phí</b><small>Dùng trên điện thoại và máy tính, chạy được cả khi mất mạng.</small></div></div></div><p class="hint" style="text-align:center">Biểu tượng dựa trên bộ Feather Icons (giấy phép MIT).</p></div>`)}
+<p class="hint">☁️ <b>Muốn dùng chung điện thoại và máy tính?</b> Vào Báo cáo → <b>Đồng bộ Google Drive</b>, đặt mật khẩu đồng bộ và dùng <b>cùng mật khẩu đó</b> trên mọi máy.</p><p class="hint">🔒 Sổ Lớp không có máy chủ, không thu thập dữ liệu. Mỗi người dùng một link nhưng dữ liệu ai nấy giữ. <a href="privacy.html" target="_blank">Chính sách quyền riêng tư</a></p>`)}
+function about(){sheet(`<div class="about"><img class="full" src="logo.png" alt="Đ-LAB"><h3 style="text-align:center;padding:0">Sổ Lớp <small>v${VERSION}</small></h3><p class="sub" style="text-align:center">Ứng dụng quản lý lớp dạy thêm cho thầy cô Việt Nam.<br>Phát triển bởi <b>Đ-LAB</b> · Nơi ý tưởng được tạo nên.</p><div class="list"><div class="row"><span class="ic" style="--tc:#22a565">${ic('lock')}</span><div class="gr"><b>Riêng tư tuyệt đối</b><small>Không máy chủ, không quảng cáo, không theo dõi. Dữ liệu nằm trên máy của bạn, hoặc trong Google Drive của chính bạn (đã mã hóa) nếu bật đồng bộ.</small></div></div><div class="row"><span class="ic" style="--tc:#2453b8">${ic('info')}</span><div class="gr"><b>Miễn phí</b><small>Dùng trên điện thoại và máy tính, chạy được cả khi mất mạng.</small></div></div></div><p class="hint" style="text-align:center"><a href="privacy.html" target="_blank">Chính sách quyền riêng tư</a> · Biểu tượng dựa trên Feather Icons (MIT).</p></div>`)}
 
 /* ---------- Xuất Excel (CSV) ---------- */
 function csv(rows){return'﻿'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')}
@@ -560,6 +561,10 @@ const A={
   dors:b=>{const t=$('#rb').value.trim();if(!t)return toast('Chọn file hoặc dán nội dung sao lưu');if(!arm(b,'Thay dữ liệu hiện tại? Bấm lần nữa'))return;doRestore(t)},
   wipe:b=>{sheet(`<h3>Xóa toàn bộ dữ liệu</h3><p>Mọi lớp, học sinh, điểm danh, học phí trên máy này sẽ bị xóa và <b>không lấy lại được</b> nếu chưa sao lưu.</p><label>Gõ chữ XOA để xác nhận<input id="wc" autocomplete="off"></label><button class="btn rd" data-a="dowipe">Xóa vĩnh viễn</button>`)},
   dowipe:()=>{if($('#wc').value.trim().toUpperCase()!=='XOA')return toast('Gõ đúng chữ XOA');S=BLANK();closeSh();tab='home';keep();toast('Đã xóa toàn bộ dữ liệu')},
+  sync:()=>syncForm(), syncnow:()=>{if(!SC.on)return syncForm();syncNow(true)},
+  syncon:async()=>{const a=$('#sp1').value;if(a.length<8)return toast('Mật khẩu đồng bộ cần ít nhất 8 ký tự');if(a!==$('#sp2').value)return toast('Hai lần nhập không khớp');
+    if(!hasCrypto())return toast('Trình duyệt này không hỗ trợ mã hóa');try{await getToken()}catch(e){return toast(e.message)}SC={...SC,on:true,pass:a,fileId:'',email:''};saveSC();closeSh();await syncNow(true);if(!syncErr)toast('Đã bật đồng bộ Google Drive')},
+  syncoff:b=>{if(!arm(b))return;SC={on:false,pass:'',fileId:'',email:'',last:0};saveSC();tok=null;closeSh();render();toast('Đã tắt đồng bộ trên máy này')},
   pin:()=>pinForm(),
   savepin:async()=>{const p=$('#p1').value;if(!/^\d{4,6}$/.test(p))return toast('PIN gồm 4 đến 6 chữ số');if(p!==$('#p2').value)return toast('Hai lần nhập PIN không khớp');const salt=b64e(rnd(16));S.pin={salt,hash:await pinHash(p,salt)};closeSh();keep();toast('Đã đặt mã PIN')},
   offpin:()=>{S.pin=null;closeSh();keep();toast('Đã tắt mã PIN')},
@@ -576,11 +581,89 @@ document.addEventListener('change',e=>{const t=e.target;if(t.id==='ad'&&t.value&
   if(['n1','n2','n3'].includes(t.id))$('#nm').value=annText();
   if(t.id==='fileIn'&&t.files[0]){const f=t.files[0];t.value='';f.text().then(txt=>{const rb=$('#rb');if(rb){rb.value=txt;toast('Đã đọc file. Nhập mật khẩu nếu có rồi bấm Khôi phục')}})}});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='pi')A.unlock()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){lock();save()}else if(tab==='home'&&!shOpen&&!qHome)render()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){lock();save()}else{if(tab==='home'&&!shOpen&&!qHome)render();if(SC.on&&tokOK())syncNow(false)}});
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;if(tab==='more')render()});
 
+/* =========================================================
+   ĐỒNG BỘ GOOGLE DRIVE (tùy chọn)
+   - Dữ liệu được MÃ HÓA trên máy bằng "mật khẩu đồng bộ" rồi mới gửi lên Drive
+     của chính người dùng. Google và Đ-LAB đều không đọc được.
+   - Quyền drive.file: app chỉ thấy đúng file do app tạo, không xem được file khác trong Drive.
+   - Ghép dữ liệu theo từng bản ghi: bản nào sửa sau cùng thì được giữ.
+   ========================================================= */
+const GOOGLE_CLIENT_ID='932946735251-m8uaa90ca5mmcfiu76qigli2oggrh718.apps.googleusercontent.com'; // Client ID công khai (không phải mật khẩu)
+const SYNC_FILE='so-lop-dong-bo.json', SYNC_KEY='so-lop-sync';
+const SCOPE='https://www.googleapis.com/auth/drive.file';
+let SC={on:false,pass:'',fileId:'',email:'',last:0};try{SC={...SC,...JSON.parse(localStorage.getItem(SYNC_KEY)||'{}')}}catch(e){}
+const saveSC=()=>{try{localStorage.setItem(SYNC_KEY,JSON.stringify(SC))}catch(e){}};
+let tok=null,tokExp=0,syncing=false,syncErr='',syncT=null,gisP=null;
+const tokOK=()=>tok&&Date.now()<tokExp-60000;
+
+// Ghi dấu thời gian sửa (u) cho từng bản ghi, và "bia mộ" (del) cho bản ghi đã xóa
+let snap=null;
+function recs(st){const m={};(st.classes||[]).forEach(c=>m['c:'+c.id]=c);(st.students||[]).forEach(s=>m['s:'+s.id]=s);(st.pays||[]).forEach(p=>m['p:'+p.id]=p);for(const k in st.att||{})m['a:'+k]=st.att[k];if(st.set)m['set']=st.set;return m}
+const sig=o=>{const{u,...r}=o;return JSON.stringify(r)};
+function stamp(){const now=Date.now(),cur=recs(S),ns={};S.del=S.del||{};
+  for(const k in cur){const j=sig(cur[k]);ns[k]=j;if(snap&&snap[k]!==j)cur[k].u=now;delete S.del[k]}
+  if(snap)for(const k in snap)if(!(k in cur))S.del[k]=now;
+  for(const k in S.del)if(now-S.del[k]>90*864e5)delete S.del[k];
+  snap=ns}
+function resetSnap(){snap=null;stamp()}
+function merge(L,R){const a=recs(L),b=recs(R),del={...(R.del||{})};for(const k in L.del||{})del[k]=Math.max(del[k]||0,L.del[k]);
+  const pick={};new Set([...Object.keys(a),...Object.keys(b)]).forEach(k=>{const x=a[k],y=b[k];const w=!x?y:!y?x:((y.u||0)>(x.u||0)?y:x);if(del[k]&&del[k]>=(w.u||0))return;pick[k]=w});
+  const order=(arr,pre)=>{const ids=arr.map(o=>o.id);Object.keys(pick).filter(k=>k.startsWith(pre)).forEach(k=>{const id=k.slice(2);if(!ids.includes(id))ids.push(id)});return ids.filter(id=>pick[pre+id]).map(id=>pick[pre+id])};
+  const n={...L,classes:order(L.classes,'c:'),students:order(L.students,'s:'),pays:order(L.pays,'p:'),att:{},set:pick.set||L.set,del};
+  for(const k in pick)if(k.startsWith('a:'))n.att[k.slice(2)]=pick[k];
+  return n}
+
+function loadGIS(){if(window.google&&google.accounts)return Promise.resolve();if(gisP)return gisP;
+  gisP=new Promise((ok,no)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onload=ok;s.onerror=()=>{gisP=null;no(new Error('Không tải được Google, kiểm tra mạng'))};document.head.appendChild(s)});return gisP}
+async function getToken(){await loadGIS();return new Promise((ok,no)=>{
+  const c=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID,scope:SCOPE,
+    callback:r=>{if(r.error)return no(new Error(r.error));tok=r.access_token;tokExp=Date.now()+(+r.expires_in||3600)*1000;ok()},
+    error_callback:e=>no(new Error(e&&e.type==='popup_closed'?'Đã đóng cửa sổ đăng nhập':'Không đăng nhập được Google'))});
+  c.requestAccessToken({prompt:SC.email?'':'consent',login_hint:SC.email||undefined})})}
+async function gapi(url,opt={}){const r=await fetch(url,{...opt,headers:{Authorization:'Bearer '+tok,...(opt.headers||{})}});
+  if(r.status===401){tok=null;throw new Error('Phiên đăng nhập Google đã hết, bấm Đồng bộ để đăng nhập lại')}
+  if(!r.ok)throw new Error('Google Drive báo lỗi '+r.status);return r}
+async function findFile(){const q=encodeURIComponent(`name='${SYNC_FILE}' and trashed=false`);const j=await(await gapi(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`)).json();return j.files&&j.files[0]?j.files[0].id:''}
+async function upload(body){const txt=JSON.stringify(body);
+  if(SC.fileId){await gapi(`https://www.googleapis.com/upload/drive/v3/files/${SC.fileId}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:txt});return}
+  const bd='solop'+Date.now(),meta={name:SYNC_FILE,mimeType:'application/json',description:'Dữ liệu Sổ Lớp (đã mã hóa). Đừng xóa file này nếu đang dùng đồng bộ.'};
+  const j=await(await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+bd},
+    body:`--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${txt}\r\n--${bd}--`})).json();SC.fileId=j.id;saveSC()}
+const SHARED=st=>{const{pin,lastBackup,seen,savedAt,...r}=st;return r};   // không đồng bộ PIN và thông tin riêng của từng máy
+async function syncNow(interactive){
+  if(!GOOGLE_CLIENT_ID||!SC.on||syncing)return;
+  if(!tokOK()){if(!interactive){syncErr='need';updSync();return}try{await getToken()}catch(e){syncErr=e.message;updSync();if(interactive)toast(e.message);return}}
+  syncing=true;syncErr='';updSync();
+  try{
+    if(!SC.email){try{const a=await(await gapi('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();SC.email=a.user.emailAddress;saveSC()}catch(e){}}
+    if(!SC.fileId)SC.fileId=await findFile();
+    let remote=null;
+    if(SC.fileId){const r=await gapi(`https://www.googleapis.com/drive/v3/files/${SC.fileId}?alt=media`).catch(e=>{if(/404/.test(e.message)){SC.fileId='';return null}throw e});
+      if(r){const o=await r.json();try{remote=JSON.parse(await decrypt(o,SC.pass))}catch(e){throw new Error('Mật khẩu đồng bộ không khớp với dữ liệu đã có trên Google Drive')}}}
+    stamp();
+    if(remote){const keepLocal={pin:S.pin,lastBackup:S.lastBackup,seen:S.seen};S=normalize({...merge(S,remote),...keepLocal});}
+    const txt=JSON.stringify(S);try{localStorage.setItem(LS,txt)}catch(e){}await dbPut(txt);resetSnap();
+    await upload({app:'so-lop',v:3,at:new Date().toISOString(),...(await encrypt(JSON.stringify(SHARED(S)),SC.pass))});
+    SC.last=Date.now();saveSC();if(!shOpen)render();
+  }catch(e){syncErr=e.message;if(interactive)toast(e.message)}
+  syncing=false;updSync()}
+function queueSync(){if(!SC.on||!tokOK())return updSync();clearTimeout(syncT);syncT=setTimeout(()=>syncNow(false),4000)}
+function ago(t){const s=(Date.now()-t)/1000;return s<60?'vừa xong':s<3600?Math.floor(s/60)+' phút trước':s<86400?Math.floor(s/3600)+' giờ trước':new Date(t).toLocaleDateString('vi-VN')}
+function syncChip(){if(!GOOGLE_CLIENT_ID||!SC.on)return'';const t=syncing?'Đang đồng bộ…':syncErr==='need'?'Bấm để đồng bộ':syncErr?'Lỗi đồng bộ, bấm thử lại':'Đã đồng bộ '+ago(SC.last);
+  return`<button class="schip ${syncErr?'warn':''}" data-a="syncnow">${ic('cloud')}<span>${t}</span></button>`}
+function updSync(){$$('.schip').forEach(e=>e.outerHTML=syncChip())}
+function syncForm(){if(GOOGLE_CLIENT_ID)loadGIS().catch(()=>{});if(!GOOGLE_CLIENT_ID)return sheet('<h3>Đồng bộ Google Drive</h3><p class="sub">Tính năng đang được cài đặt, sẽ có trong bản cập nhật tới.</p>');
+  if(SC.on)return sheet(`<h3>Đồng bộ Google Drive</h3><div class="card ok">✓ Đang bật${SC.email?' · '+esc(SC.email):''}<br><small style="color:inherit">${SC.last?'Lần cuối: '+ago(SC.last):'Chưa đồng bộ lần nào'}</small></div>${syncErr&&syncErr!=='need'?`<p class="hint" style="color:var(--r)">${esc(syncErr)}</p>`:''}<button class="btn" data-a="syncnow">Đồng bộ ngay</button><button class="btn rd" data-a="syncoff">Tắt đồng bộ trên máy này</button><p class="hint">Tắt đồng bộ: dữ liệu trên máy này vẫn giữ nguyên, file trên Drive cũng không bị xóa.</p>`);
+  sheet(`<h3>Đồng bộ Google Drive</h3><p class="sub">Dùng chung dữ liệu giữa điện thoại và máy tính. Dữ liệu được <b>mã hóa trên máy</b> rồi lưu vào <b>Google Drive của chính ${esc(S.set.xung)}</b>. Google và Đ-LAB đều không đọc được.</p>
+  <label>Mật khẩu đồng bộ (ít nhất 8 ký tự)<input id="sp1" type="password" autocomplete="new-password"></label><label>Nhập lại mật khẩu<input id="sp2" type="password" autocomplete="new-password"></label>
+  <p class="hint">⚠️ <b>Dùng cùng một mật khẩu trên mọi máy.</b> Quên mật khẩu là không mở được dữ liệu trên Drive (vẫn còn dữ liệu trên từng máy). Hãy ghi mật khẩu ra giấy và cất kỹ.</p>
+  <button class="btn" data-a="syncon">Đăng nhập Google & bật đồng bộ</button><p class="hint">App chỉ xin quyền truy cập <b>đúng file do Sổ Lớp tạo</b>, không xem được các file khác trong Drive.</p>`)}
+
 /* ---------- Khởi động ---------- */
-(async()=>{await load();document.title=S.set.title;if(S.pin&&typeof S.pin!=='object')S.pin=null;lock();render();
+(async()=>{await load();resetSnap();if(SC.on){syncErr='need';loadGIS().catch(()=>{})}document.title=S.set.title;if(S.pin&&typeof S.pin!=='object')S.pin=null;lock();render();
   try{if(navigator.storage&&navigator.storage.persisted)persisted=await navigator.storage.persisted()}catch(e){}
   if(S.students.length)askPersist();
   if('serviceWorker'in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
