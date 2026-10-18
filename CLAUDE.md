@@ -49,13 +49,16 @@ Sự kiện dùng ủy quyền: `document.addEventListener('click', ...)` gọi 
 - `set`: `{title, xung, name, bin, bank, acc, holder, ob}` — `xung` = Thầy/Cô/…; `title` = tên trung tâm
   (mặc định 'Sổ Lớp'); `ob` = đã qua màn hình chào mừng.
 - `classes[]`: `{id, name, days[0-6], start, end, place, fees:[{from:'YYYY-MM', fee}]}`
-- `students[]`: `{id, name, classId, pr, pn, pp, note, fees[], from:'YYYY-MM', left?}`
-- `att{ 'YYYY-MM-DD|classId': {m:{sid:'c'|'p'|'k'}, n:{sid:'lý do'}} }` — c có mặt, p có phép, k không phép
-- `pays[]`: `{id, sid, month:'YYYY-MM', amount, date, how}`
+- `students[]`: `{id, name, classId, pr, pn, pp, note, fees[], from:'YYYY-MM', left?, ch?}`
+  — `ch:[{from:'YYYY-MM', cid}]` lịch sử chuyển lớp (tháng cũ tính học phí theo lớp cũ, xem `clsAt()`).
+- `att{ 'YYYY-MM-DD|classId': {m:{sid:'c'|'p'|'k'}, n:{sid:'lý do'}, t?, cm?, off?} }` — c có mặt, p có phép,
+  k không phép; `t` nội dung buổi học, `cm:{sid:'nhận xét'}` (đưa vào báo cáo tháng), `off:1` buổi nghỉ không dạy.
+- `pays[]`: `{id, sid, month:'YYYY-MM', amount, date, how, w?}` — `w:1` = miễn giảm (tính là đã đủ, không tính doanh thu).
 - `del{}`: "bia mộ" bản ghi đã xóa (cho đồng bộ); mỗi bản ghi có thể có `u` (thời điểm sửa) do `stamp()` gắn.
 - `pin`, `lastBackup`, `seen`, `savedAt`: riêng từng máy, **không đồng bộ**.
 
 **Không được làm hỏng dữ liệu cũ của người dùng.** Đổi cấu trúc → viết chuyển đổi trong `normalize()`.
+Trường mới phải được giữ lại/làm sạch trong `clean()` (mọi dữ liệu nạp vào đều đi qua đây).
 Học phí có lịch sử (`fees[]` theo tháng) để đổi học phí không làm sai các tháng trước.
 
 ## Những điều KHÔNG được thay đổi tùy tiện
@@ -78,7 +81,8 @@ Học phí có lịch sử (`fees[]` theo tháng) để đổi học phí không
 - Nghỉ dạy / dạy bù: chỉ cần mẫu tin "Thông báo chung", không làm tính năng riêng.
 - Phụ huynh không cài app; mọi thứ gửi qua Zalo (sao chép tin, mở zalo.me/SĐT).
 - Thầy hay ghi lớp ở trường sau tên học sinh (vd "Đoàn Nguyên Đức 4.7"); `initial()` bỏ qua phần số.
+  **Không làm ô riêng "Lớp ở trường"** (thầy đã quyết định không cần).
+- Nợ học phí dồn: tính từ tháng em vào học (`from`), tối đa 60 tháng, xem `owe()`/`debtors()`.
 
 ## Ý tưởng chưa làm
-- Ô riêng "Lớp ở trường" (tách "4.7" khỏi tên, lọc theo lớp).
-- Sổ đầu bài / nhận xét từng buổi; nhập danh sách từ Excel.
+- Nhập danh sách học sinh từ file Excel.

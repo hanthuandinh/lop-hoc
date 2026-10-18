@@ -215,7 +215,7 @@ textarea{min-height:130px;resize:vertical}
    Chạy 100% trên máy, không gửi dữ liệu đi đâu.
    Dữ liệu lưu trong IndexedDB (kho của trình duyệt) + bản dự phòng localStorage.
    ========================================================= */
-const VERSION='1.4.0';
+const VERSION='1.5.0';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -304,7 +304,9 @@ function clean(n){const map={};
   n.pays=n.pays.filter(isObj).map(p=>({...p,id:fix(p.id),sid:ref(p.sid),month:str(p.month),amount:+p.amount||0,date:reD.test(p.date)?p.date:'',how:str(p.how)}));
   const att={};for(const k in n.att){const r=n.att[k],[d,c]=k.split('|'),cid=ref(c);if(!reD.test(d)||!cid||!isObj(r)||!isObj(r.m))continue;
     const m={},nt={};for(const sid in r.m){const i=ref(sid);if(i&&['c','p','k'].includes(r.m[sid])){m[i]=r.m[sid];if(isObj(r.n)&&r.n[sid])nt[i]=str(r.n[sid])}}
-    att[d+'|'+cid]={...r,m,n:nt}}
+    const o={...r,m,n:nt};delete o.t;delete o.cm;delete o.off;if(r.t)o.t=str(r.t);if(r.off)o.off=1;
+    if(isObj(r.cm)){const cc={};for(const sid in r.cm){const i=ref(sid);if(i&&r.cm[sid])cc[i]=str(r.cm[sid])}if(Object.keys(cc).length)o.cm=cc}
+    att[d+'|'+cid]=o}
   n.att=att;if(!isObj(n.del))delete n.del;return n}
 let dbP=null;   // giữ một kết nối IndexedDB dùng chung, không mở mới mỗi lần lưu
 function idb(){return dbP||(dbP=new Promise((ok,no)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=()=>r.result.createObjectStore(ST);r.onsuccess=()=>{r.result.onclose=r.result.onversionchange=()=>{try{r.result.close()}catch(e){}dbP=null};ok(r.result)};r.onerror=()=>{dbP=null;no(r.error)}}))}
@@ -332,6 +334,15 @@ const classStu=cid=>S.students.filter(s=>s.classId===cid&&!s.left).sort((a,b)=>a
 const paidOf=(sid,m)=>S.pays.filter(p=>p.sid===sid&&p.month===m).reduce((a,p)=>a+(+p.amount||0),0);
 function feeState(s,m){const due=enrolled(s,m)?stuFee(s,m):0,paid=paidOf(s.id,m);return{due,paid,rest:Math.max(0,due-paid),st:due<=0?(paid>0?'ok':'free'):paid>=due?'ok':paid>0?'part':'no'}}
 const unpaid=m=>S.students.filter(s=>['no','part'].includes(feeState(s,m).st));
+// Tiền thật đã thu (không tính khoản "miễn giảm" w:1) — dùng cho doanh thu
+const isCash=p=>!p.w;
+// Nợ dồn: các tháng từ lúc em vào học tới tháng `upto` còn thiếu tiền → {months:[{m,rest}], total}
+function owe(s,upto){const c=cls(clsAt(s,upto)),f0=c&&c.fees.length?c.fees.reduce((a,e)=>e.from<a?e.from:a,'9999-99'):upto;
+  let m=s.from||f0;const lim=shiftM(upto,-59);if(m<lim)m=lim;const months=[];let total=0;
+  for(;m<=upto;m=shiftM(m,1)){const r=feeState(s,m).rest;if(r>0){months.push({m,rest:r});total+=r}}return{months,total}}
+const debtors=upto=>S.students.map(s=>({s,o:owe(s,upto)})).filter(x=>x.o.total>0);
+// "tháng 9, 10/2026" hoặc "tháng 12/2025, 1/2026"
+const mList=ms=>{const y=ms[0].slice(0,4);return ms.every(m=>m.slice(0,4)===y)?'tháng '+ms.map(m=>Number(m.slice(5))).join(', ')+'/'+y:'tháng '+ms.map(m=>Number(m.slice(5))+'/'+m.slice(0,4)).join(', ')};
 const dayTxt=c=>c.days.slice().sort((a,b)=>(a+6)%7-(b+6)%7).map(d=>DN[d]).join(', ');
 const AK=(d,cid)=>d+'|'+cid;
 function stuAtt(sid,pred){let c=0,p=0,k=0;for(const key in S.att){const v=S.att[key].m&&S.att[key].m[sid];if(!v)continue;if(pred&&!pred(key.slice(0,10)))continue;v==='c'?c++:v==='p'?p++:k++}return{c,p,k,t:c+p+k}}
@@ -340,12 +351,18 @@ function sessions(days){const t=new Date(),out=[];for(let i=0;i<days;i++){const 
 const backupDue=()=>S.students.length&&Date.now()-(S.lastBackup||0)>14*864e5;
 
 /* ---------- Giao diện chung ---------- */
-let tab='home',fm=cm(),ry=new Date().getFullYear(),qStu='',qHome='',shOpen=false,toastT,undoFn=null;
-function toast(t,undo){const e=$('#ts');undoFn=undo||null;e.innerHTML='<span>'+esc(t)+'</span>'+(undo?'<button data-a="undo">Hoàn tác</button>':'');e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{e.hidden=true;undoFn=null},undo?5000:2400)}
-function sheet(h){if(!shOpen){shOpen=true;try{history.pushState({sh:1},'')}catch(e){}}$('#sh').innerHTML='<div class="bk" data-a="close"></div><div class="pn" role="dialog"><button class="x" data-a="close" aria-label="Đóng">✕</button>'+h+'</div>';$('#sh').hidden=false}
+let tab='home',fm=cm(),ry=new Date().getFullYear(),qStu='',qHome='',shOpen=false,toastT,undoFn=null,actFn=null;
+// act: nút thêm trên thông báo, dạng ['Nhãn', hàm] (vd. "Phiếu thu" sau khi thu tiền)
+function toast(t,undo,act){const e=$('#ts');undoFn=undo||null;actFn=act?act[1]:null;e.innerHTML='<span>'+esc(t)+'</span>'+(act?`<button data-a="tact">${esc(act[0])}</button>`:'')+(undo?'<button data-a="undo">Hoàn tác</button>':'');e.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{e.hidden=true;undoFn=null;actFn=null},undo||act?6000:2400)}
+function sheet(h){if(!shOpen){shOpen=true;try{history.pushState({sh:1,tab},'')}catch(e){}}$('#sh').innerHTML='<div class="bk" data-a="close"></div><div class="pn" role="dialog"><button class="x" data-a="close" aria-label="Đóng">✕</button>'+h+'</div>';$('#sh').hidden=false}
 function hideSh(){$('#sh').hidden=true;$('#sh').innerHTML=''}
 function closeSh(){if(!shOpen)return;shOpen=false;hideSh();try{if(history.state&&history.state.sh)history.back()}catch(e){}}
-addEventListener('popstate',()=>{if(shOpen){shOpen=false;hideSh()}});
+// Nút Quay lại (Android): đóng bảng đang mở; ở trang khác thì về Trang chủ; ở Trang chủ mới thoát app
+addEventListener('popstate',e=>{if(shOpen){shOpen=false;hideSh();return}const t=(e.state&&e.state.tab)||'home';if(t!==tab){tab=t;render();scrollTo(0,0)}});
+function go(t){if(t===tab)return scrollTo(0,0);
+  try{if(t==='home'){if(history.state&&history.state.tab&&history.state.tab!=='home')return history.back()}   // popstate sẽ vẽ Trang chủ
+    else if(tab==='home')history.pushState({tab:t},'');else history.replaceState({tab:t},'')}catch(e){}
+  tab=t;render();scrollTo(0,0)}
 const keep=()=>{save();render()};
 async function copy(t){try{await navigator.clipboard.writeText(t);toast('Đã sao chép, dán vào Zalo nhé')}catch(e){sheet('<h3>Chép nội dung</h3><textarea readonly>'+esc(t)+'</textarea><p class="sub">Nhấn giữ vào ô trên → Chọn tất cả → Sao chép.</p><button class="btn" data-a="close">Xong</button>')}}
 function arm(b,txt){if(b.dataset.arm)return true;b.dataset.arm=1;b.dataset.old=b.innerHTML;b.textContent=txt||'Bấm lần nữa để chắc chắn';setTimeout(()=>{if(b.isConnected){delete b.dataset.arm;b.innerHTML=b.dataset.old}},4000);return false}
@@ -361,7 +378,7 @@ function quote(x){const t=new Date(),d=Math.floor((t-new Date(t.getFullYear(),0,
 const PLANE='<svg class="plane" viewBox="0 0 220 120" aria-hidden="true"><path d="M8 108 C 60 100, 110 80, 150 48" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="3" stroke-dasharray="2 9" stroke-linecap="round"/><path d="M212 8 L120 44 L150 54 Z" fill="#ffb347"/><path d="M212 8 L150 54 L160 86 Z" fill="#f7931e"/><path d="M150 54 L160 86 L146 64 Z" fill="#d9700a"/></svg>';
 function greet(){const h=new Date().getHours();return h<11?'Chào buổi sáng':h<13?'Chào buổi trưa':h<18?'Chào buổi chiều':'Chào buổi tối'}
 function tile(o){return`<button class="tile" style="--tc:${o.c}" data-a="${o.a}" ${o.v?`data-v="${o.v}"`:''}><span class="tic">${ic(o.i)}</span><b>${o.t}</b><small class="sub">${o.s}</small>${ic('chev','chev')}${o.b?`<span class="badge ${o.bc||''}">${o.b}</span>`:''}</button>`}
-function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),todayC=S.classes.filter(c=>c.days.includes(t.getDay()));
+function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),allD=debtors(m),oldD=debtors(shiftM(m,-1)),todayC=S.classes.filter(c=>c.days.includes(t.getDay()));
   const x=S.set.xung||'bạn';
   let h=`<div class="top">${PLANE}<div class="toprow"><div class="gr"><small>${DNF[t.getDay()]}, ${t.getDate()}/${t.getMonth()+1}/${t.getFullYear()}</small><h1>${greet()}${S.set.name||S.set.xung?', '+esc(who()):''} 👋</h1>${S.set.title&&S.set.title!=='Sổ Lớp'?`<div class="center">${ic('home')}${esc(cap(S.set.title))}</div>`:''}</div><button class="ava" data-a="tab" data-v="more" aria-label="Cài đặt"><img src="mark.png" alt=""></button></div>
   <p class="quote">“${esc(quote(x))}”</p>
@@ -373,7 +390,7 @@ function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),todayC=S.clas
     {c:'#f08a24',i:'book',t:'Lớp học',s:`${S.classes.length} lớp`,a:'tab',v:'classes'},
     {c:'#22a565',i:'users',t:'Học sinh',s:`${S.students.filter(s=>!s.left).length} em đang học`,a:'tab',v:'students'},
     {c:'#7c5ce6',i:'card',t:'Học phí',s:`Tháng ${Number(m.slice(5))}`,a:'gofees',b:un.length||''},
-    {c:'#e5527a',i:'bell',t:'Nhắc học phí',s:un.length?`${un.length} em chưa nộp`:'Đã thu đủ',a:'remindall'},
+    {c:'#e5527a',i:'bell',t:'Nhắc học phí',s:allD.length?`${allD.length} em còn nợ`:'Đã thu đủ',a:'remindall'},
     {c:'#1aa3b5',i:'msg',t:'Thông báo chung',s:'Nghỉ học, dạy bù…',a:'announce',b:S.seen.ann?'':'Mới',bc:'new'},
     {c:'#e0a800',i:'chart',t:'Báo cáo',s:'Tuần, tháng, năm',a:'tab',v:'more'},
     {c:'#4f5fd8',i:'file',t:'Xuất Excel',s:'Học phí, điểm danh',a:'export'},
@@ -382,13 +399,15 @@ function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),todayC=S.clas
   // Việc cần làm
   const todo=[];
   todayC.filter(c=>c.start<=nowHM()&&!S.att[AK(td,c.id)]).forEach(c=>todo.push(['#2453b8','check',`Chưa điểm danh lớp <b>${esc(c.name)}</b>`,`<button class="btn sm" data-a="att" data-id="${c.id}">Điểm danh</button>`]));
+  const ms=missed();if(ms.length)todo.push(['#2453b8','check',`<b>${ms.length} buổi</b> chưa điểm danh trong 7 ngày qua`,`<button class="btn sm gh" data-a="missed">Xem</button>`]);
   if(un.length)todo.push(['#7c5ce6','card',`<b>${un.length} học sinh</b> chưa nộp đủ học phí ${mLabel(m)}`,`<button class="btn sm gh" data-a="remindall">Nhắc</button>`]);
+  if(oldD.length)todo.push(['#d64545','card',`<b>${oldD.length} học sinh</b> còn nợ học phí các tháng trước (${money(oldD.reduce((a,x)=>a+x.o.total,0))})`,`<button class="btn sm gh" data-a="remindall">Nhắc</button>`]);
   S.students.filter(s=>!s.left).forEach(s=>{const k=absentStreak(s.id);if(k>=2)todo.push(['#d64545','alert',`<b>${esc(s.name)}</b> vắng ${k} buổi liên tiếp`,`<button class="btn sm gh" data-a="contact" data-id="${s.id}">Hỏi thăm</button>`])});
   if(backupDue())todo.push(['#5b6b86','cloud',S.lastBackup?'Đã hơn 2 tuần chưa sao lưu':'Chưa sao lưu dữ liệu lần nào',`<button class="btn sm gh" data-a="backup">Sao lưu</button>`]);
   const todoH=`<div class="lbl">Việc cần làm</div>`+(todo.length?`<div class="list">${todo.map(x=>`<div class="row"><span class="ic" style="--tc:${x[0]}">${ic(x[1])}</span><div class="gr">${x[2]}</div>${x[3]}</div>`).join('')}</div>`:`<div class="card ok">✓ Không còn việc tồn đọng. Chúc ${esc(S.set.xung)} dạy vui!</div>`);
   const ss=sessions(7).slice(0,6);
   const upH=`<div class="lbl">Lịch dạy sắp tới<button data-a="tab" data-v="classes">Xem tất cả</button></div>`+(ss.length?`<div class="list">${ss.map(x=>{const ds=ymd(x.d),done=S.att[AK(ds,x.c.id)];
-    return`<div class="row"><div class="dbad ${x.i?'':'today'}"><small>TH${x.d.getMonth()+1}</small><b>${x.d.getDate()}</b><span>${DN[x.d.getDay()]}</span></div><div class="gr"><b>${esc(x.c.name)}</b><div class="meta"><span>${ic('clock')}${x.c.start} – ${x.c.end}</span>${x.c.place?`<span>${ic('pin')}${esc(x.c.place)}</span>`:''}<span>${ic('users')}${classStu(x.c.id).length}</span></div></div>${x.i?`<span class="chip">${x.i===1?'Ngày mai':'Sắp tới'}</span>`:done?`<button class="btn sm gh" data-a="att" data-id="${x.c.id}">✓ Đã điểm danh</button>`:`<button class="btn sm" data-a="att" data-id="${x.c.id}">Điểm danh</button>`}</div>`}).join('')}</div>`:'<div class="card">Không có buổi dạy nào trong 7 ngày tới.</div>');
+    return`<div class="row"><div class="dbad ${x.i?'':'today'}"><small>TH${x.d.getMonth()+1}</small><b>${x.d.getDate()}</b><span>${DN[x.d.getDay()]}</span></div><div class="gr"><b>${esc(x.c.name)}</b><div class="meta"><span>${ic('clock')}${x.c.start} – ${x.c.end}</span>${x.c.place?`<span>${ic('pin')}${esc(x.c.place)}</span>`:''}<span>${ic('users')}${classStu(x.c.id).length}</span></div></div>${x.i?`<span class="chip">${x.i===1?'Ngày mai':'Sắp tới'}</span>`:done?`<button class="btn sm gh" data-a="att" data-id="${x.c.id}">${done.off?'Nghỉ':'✓ Đã điểm danh'}</button>`:`<button class="btn sm" data-a="att" data-id="${x.c.id}">Điểm danh</button>`}</div>`}).join('')}</div>`:'<div class="card">Không có buổi dạy nào trong 7 ngày tới.</div>');
   return h+`<div class="cols"><div>${todoH}</div><div>${upH}</div></div>`}
 function homeSearch(){const q=qHome.trim().toLowerCase();if(!q)return'';const d=digits(q);
   const r=S.students.filter(s=>s.name.toLowerCase().includes(q)||(d&&digits(s.pp).includes(d))).slice(0,8);
@@ -442,11 +461,18 @@ function attPick(){const t=new Date(),td=S.classes.filter(c=>c.days.includes(t.g
   sheet(`<h3>Điểm danh lớp nào?</h3><div class="list">${list.map(c=>`<div class="row"><span class="ic" style="--tc:${td.includes(c)?'#f7931e':'#2453b8'}">${ic('book')}</span><div class="gr"><b>${esc(c.name)}</b><small>${td.includes(c)?'Hôm nay · ':''}${dayTxt(c)} · ${c.start} – ${c.end}</small></div><button class="btn sm ${td.includes(c)?'':'gh'}" data-a="att" data-id="${c.id}">Chọn</button></div>`).join('')}</div>`)}
 function openAtt(cid,date){const c=cls(cid);if(!c)return;const r=S.att[AK(date,cid)];
   const ids=new Set(classStu(cid).filter(s=>enrolled(s,date.slice(0,7))||!s.from).map(s=>s.id));if(r&&r.m)Object.keys(r.m).forEach(id=>{if(stuById(id))ids.add(id)});
-  cur={cid,date,exist:!!r,ids:[...ids].sort((a,b)=>stuById(a).name.localeCompare(stuById(b).name,'vi')),m:{},n:{}};
-  cur.ids.forEach(id=>{cur.m[id]=(r&&r.m[id])||'c';cur.n[id]=(r&&r.n&&r.n[id])||''});
-  sheet(`<h3>Điểm danh · ${esc(c.name)}</h3><label>Ngày<input id="ad" type="date" value="${date}" max="${today()}"></label>${cur.exist?'<p class="sub">Ngày này đã điểm danh, đang sửa lại.</p>':''}<p class="hint">Cả lớp mặc định <b>có mặt</b>. Chạm vào bạn vắng: 1 lần = <b>vắng có phép (P)</b>, 2 lần = <b>vắng không phép (K)</b>, 3 lần = có mặt lại.</p><div class="list" style="margin-top:10px">${cur.ids.map(attRow).join('')||'<div class="row"><small>Lớp chưa có học sinh.</small></div>'}</div><div class="sub" id="asum">${attSum()}</div><button class="btn" data-a="saveatt">Lưu điểm danh</button>${cur.exist?'<button class="btn rd" data-a="delatt">Xóa buổi điểm danh này</button>':''}`)}
+  // t: nội dung buổi học (sổ đầu bài), c: nhận xét từng em, sc: em đang mở ô nhận xét; off: buổi nghỉ không dạy
+  cur={cid,date,exist:!!r,off:!!(r&&r.off),ids:[...ids].sort((a,b)=>stuById(a).name.localeCompare(stuById(b).name,'vi')),m:{},n:{},c:{},sc:{},t:(r&&r.t)||''};
+  cur.ids.forEach(id=>{cur.m[id]=(r&&r.m[id])||'c';cur.n[id]=(r&&r.n&&r.n[id])||'';cur.c[id]=(r&&r.cm&&r.cm[id])||''});
+  sheet(`<h3>Điểm danh · ${esc(c.name)}</h3><label>Ngày<input id="ad" type="date" value="${date}" max="${today()}"></label>${cur.off?'<p class="sub">Buổi này đã đánh dấu <b>nghỉ (không dạy)</b>. Lưu điểm danh để thay.</p>':cur.exist?'<p class="sub">Ngày này đã điểm danh, đang sửa lại.</p>':''}<label>Nội dung buổi học (không bắt buộc)<input id="at" value="${esc(cur.t)}" placeholder="Ví dụ: Gõ 10 ngón, bài 3" autocomplete="off"></label><p class="hint">Cả lớp mặc định <b>có mặt</b>. Chạm vào bạn vắng: 1 lần = <b>vắng có phép (P)</b>, 2 lần = <b>vắng không phép (K)</b>, 3 lần = có mặt lại. Bấm ${ic('msg')} để ghi nhận xét riêng cho em, nhận xét sẽ có trong báo cáo tháng.</p><div class="list" style="margin-top:10px">${cur.ids.map(attRow).join('')||'<div class="row"><small>Lớp chưa có học sinh.</small></div>'}</div><div class="sub" id="asum">${attSum()}</div><button class="btn" data-a="saveatt">Lưu điểm danh</button>${cur.exist?`<button class="btn rd" data-a="delatt">${cur.off?'Bỏ đánh dấu nghỉ':'Xóa buổi điểm danh này'}</button>`:`<button class="btn ln" data-a="attoff" data-id="${cid}" data-v="${date}">Buổi này nghỉ, không dạy</button>`}`)}
 function attRow(id){const s=stuById(id),v=cur.m[id],L={c:['✓','Có mặt'],p:['P','Vắng có phép'],k:['K','Vắng không phép']}[v];
-  return`<div class="row att-${v}" id="ar-${id}"><button class="arow" data-a="tog" data-id="${id}"><span class="mark">${L[0]}</span><span class="gr"><b>${esc(s.name)}</b><small>${L[1]}</small></span></button>${v!=='c'?`<input class="note" data-note="${id}" placeholder="Lý do (không bắt buộc)" value="${esc(cur.n[id])}">`:''}</div>`}
+  return`<div class="row att-${v}" id="ar-${id}"><button class="arow" data-a="tog" data-id="${id}"><span class="mark">${L[0]}</span><span class="gr"><b>${esc(s.name)}</b><small>${L[1]}${cur.c[id]?' · có nhận xét':''}</small></span></button><button class="btn sm gh" data-a="cmt" data-id="${id}" aria-label="Nhận xét">${ic('msg')}</button>${v!=='c'?`<input class="note" data-note="${id}" placeholder="Lý do (không bắt buộc)" value="${esc(cur.n[id])}">`:''}${cur.sc[id]||cur.c[id]?`<input class="note" data-cmt="${id}" placeholder="Nhận xét cho em (gửi kèm báo cáo tháng)" value="${esc(cur.c[id])}">`:''}</div>`}
+// Buổi bị bỏ sót: 7 ngày qua, đúng lịch lớp, chưa điểm danh và chưa đánh dấu nghỉ.
+// Chỉ tính từ sau buổi điểm danh đầu tiên của lớp (lớp mới tạo chưa bị nhắc oan).
+function missed(){const first={},out=[],t=new Date();for(const k in S.att){const[d,c]=k.split('|');if(!first[c]||d<first[c])first[c]=d}
+  for(let i=1;i<=7;i++){const d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-i),ds=ymd(d);S.classes.forEach(c=>{if(c.days.includes(d.getDay())&&first[c.id]&&ds>first[c.id]&&!S.att[AK(ds,c.id)])out.push({ds,c})})}return out}
+function missSheet(){const ms=missed();if(!ms.length)return closeSh();
+  sheet(`<h3>Buổi chưa điểm danh</h3><p class="sub">${ms.length} buổi trong 7 ngày qua. Điểm danh bổ sung, hoặc bấm "Nghỉ" nếu hôm đó không dạy.</p><div class="list">${ms.map(({ds,c})=>{const d=toDate(ds);return`<div class="row"><div class="dbad"><small>TH${d.getMonth()+1}</small><b>${d.getDate()}</b><span>${DN[d.getDay()]}</span></div><div class="gr"><b>${esc(c.name)}</b><small>${c.start} – ${c.end}</small></div><button class="btn sm gh" data-a="attoff" data-id="${c.id}" data-v="${ds}" data-list="1">Nghỉ</button><button class="btn sm" data-a="attd" data-id="${c.id}" data-v="${ds}">Điểm danh</button></div>`}).join('')}</div>`)}
 function attSum(){const v=Object.values(cur.m);return`Có mặt ${v.filter(x=>x==='c').length} · Có phép ${v.filter(x=>x==='p').length} · Không phép ${v.filter(x=>x==='k').length}`}
 
 /* ---------- Thông báo chung (gửi nhóm Zalo lớp) ---------- */
@@ -467,47 +493,77 @@ function announce(cid){if(!S.classes.length)return toast('Hãy thêm lớp trư�
   $('#nm').value=annText()}
 
 /* ---------- Học phí ---------- */
-function vFees(){const list=S.students.filter(s=>enrolled(s,fm)||paidOf(s.id,fm)>0).map(s=>({s,f:feeState(s,fm)}));
-  const exp=list.reduce((a,x)=>a+x.f.due,0),got=S.pays.filter(p=>p.month===fm).reduce((a,p)=>a+(+p.amount||0),0),nNo=list.filter(x=>['no','part'].includes(x.f.st)).length;
-  let h=`<h1>Học phí</h1><div class="mo"><button class="btn sm gh" data-a="mo" data-v="-1" aria-label="Tháng trước">‹</button><b>${mLabel(fm).replace(/^t/,'T')}</b><button class="btn sm gh" data-a="mo" data-v="1" aria-label="Tháng sau">›</button></div><div class="card"><small>Đã thu</small><div class="big">${money(got)}</div><div class="bar"><i style="width:${exp?Math.min(100,got/exp*100):0}%"></i></div><div class="stats"><div class="stat"><small>Dự kiến</small><b>${money(exp)}</b></div><div class="stat"><small>Còn phải thu</small><b style="color:var(--r)">${money(Math.max(0,exp-got))}</b></div><div class="stat"><small>Chưa nộp đủ</small><b>${nNo} em</b></div></div>${nNo?'<button class="btn or" data-a="remindall">Nhắc tất cả phụ huynh chưa nộp</button>':''}</div>`;
+function vFees(){const list=S.students.filter(s=>enrolled(s,fm)||paidOf(s.id,fm)>0).map(s=>({s,f:feeState(s,fm),old:owe(s,shiftM(fm,-1))}));
+  const exp=list.reduce((a,x)=>a+x.f.due,0),rest=list.reduce((a,x)=>a+x.f.rest,0),got=S.pays.filter(p=>p.month===fm&&isCash(p)).reduce((a,p)=>a+(+p.amount||0),0),nNo=list.filter(x=>['no','part'].includes(x.f.st)).length;
+  const oldD=debtors(shiftM(fm,-1)),oldT=oldD.reduce((a,x)=>a+x.o.total,0);
+  let h=`<h1>Học phí</h1><div class="mo"><button class="btn sm gh" data-a="mo" data-v="-1" aria-label="Tháng trước">‹</button><b>${mLabel(fm).replace(/^t/,'T')}</b><button class="btn sm gh" data-a="mo" data-v="1" aria-label="Tháng sau">›</button></div><div class="card"><small>Đã thu</small><div class="big">${money(got)}</div><div class="bar"><i style="width:${exp?Math.min(100,(exp-rest)/exp*100):0}%"></i></div><div class="stats"><div class="stat"><small>Dự kiến</small><b>${money(exp)}</b></div><div class="stat"><small>Còn phải thu</small><b style="color:var(--r)">${money(rest)}</b></div><div class="stat"><small>Chưa nộp đủ</small><b>${nNo} em</b></div></div>${oldT?`<p class="hint" style="color:var(--r)">Ngoài ra còn nợ các tháng trước: <b>${money(oldT)}</b> (${oldD.length} em)</p>`:''}${nNo||oldT?'<button class="btn or" data-a="remindall">Nhắc tất cả phụ huynh còn nợ</button>':''}</div>`;
   const grp=(t,st,chip)=>{const a=list.filter(x=>x.f.st===st);return a.length?`<div><div class="lbl">${t} <span class="chip ${chip}">${a.length}</span></div><div class="list">${a.map(feeRow).join('')}</div></div>`:''};
   if(!list.length)return h+'<div class="card">Tháng này chưa có học sinh nào.</div>';
   return h+`<div class="cols">`+grp('Chưa nộp','no','r')+grp('Nộp thiếu','part','y')+grp('Đã nộp đủ','ok','ok')+grp('Không tính phí','free','')+`</div>`}
-function feeRow({s,f}){const c=cls(s.classId);
-  return`<div class="row fee"><button class="arow" data-a="paydt" data-id="${s.id}"><i class="av">${esc(initial(s.name))}</i><span class="gr"><b>${esc(s.name)}</b><small>${esc(c?c.name:'')} · ${money(f.due)}${f.st==='part'?` · đã nộp ${money(f.paid)}, còn ${money(f.rest)}`:''}</small></span></button>${f.st==='no'||f.st==='part'?`<div class="ra"><button class="btn sm gh" data-a="nhac" data-id="${s.id}">Nhắc</button><button class="btn sm" data-a="payfull" data-id="${s.id}">Thu ${f.st==='part'?'nốt':'đủ'}</button></div>`:f.st==='ok'?`<button class="btn sm gh" data-a="paydt" data-id="${s.id}">✓ Đã thu</button>`:''}</div>`}
-function payDetail(s){const f=feeState(s,fm),ps=S.pays.filter(p=>p.sid===s.id&&p.month===fm);
-  sheet(`<h3>${esc(s.name)} · ${mLabel(fm)}</h3><p class="sub">Phải nộp ${money(f.due)} · Đã nộp ${money(f.paid)} · Còn ${money(f.rest)}</p>${ps.length?`<div class="list">${ps.map(p=>`<div class="row"><div class="gr"><b>${money(p.amount)}</b><small>Ngày ${p.date.split('-').reverse().join('/')}${p.how?' · '+esc(p.how):''}</small></div><button class="btn sm rd" data-a="delpay" data-id="${p.id}">Xóa</button></div>`).join('')}</div>`:''}<label>Số tiền thu<input id="pa" class="money" type="text" inputmode="numeric" autocomplete="off" value="${f.rest?fmtN(f.rest):''}"></label><div class="two"><label>Ngày thu<input id="pd" type="date" value="${today()}"></label><label>Hình thức<select id="ph"><option>Tiền mặt</option><option>Chuyển khoản</option></select></label></div><button class="btn" data-a="savepay" data-id="${s.id}">Lưu khoản thu</button>${f.rest?`<button class="btn gh" data-a="nhac" data-id="${s.id}">Soạn tin nhắc học phí</button>`:''}`)}
+function feeRow({s,f,old}){const c=cls(s.classId),n=old.months.length;
+  return`<div class="row fee"><button class="arow" data-a="paydt" data-id="${s.id}"><i class="av">${esc(initial(s.name))}</i><span class="gr"><b>${esc(s.name)}${n?`<span class="tag">nợ ${n} tháng trước</span>`:''}</b><small>${esc(c?c.name:'')} · ${money(f.due)}${f.st==='part'?` · đã nộp ${money(f.paid)}, còn ${money(f.rest)}`:''}</small></span></button>${f.st==='no'||f.st==='part'?`<div class="ra"><button class="btn sm gh" data-a="nhac" data-id="${s.id}">Nhắc</button><button class="btn sm" data-a="payfull" data-id="${s.id}">Thu ${f.st==='part'?'nốt':'đủ'}</button></div>`:f.st==='ok'?`<div class="ra">${n?`<button class="btn sm gh" data-a="nhac" data-id="${s.id}">Nhắc nợ cũ</button>`:''}<button class="btn sm gh" data-a="paydt" data-id="${s.id}">✓ Đã thu</button></div>`:''}</div>`}
+function payDetail(s){const f=feeState(s,fm),ps=S.pays.filter(p=>p.sid===s.id&&p.month===fm),old=owe(s,shiftM(fm,-1));
+  sheet(`<h3>${esc(s.name)} · ${mLabel(fm)}</h3><p class="sub">Phải nộp ${money(f.due)} · Đã nộp ${money(f.paid)} · Còn ${money(f.rest)}</p>${old.total?`<div class="card" style="background:var(--r2);border:0;box-shadow:none"><b style="color:var(--r)">Còn nợ các tháng trước: ${money(old.total)}</b><div class="acts">${old.months.map(o=>`<button class="btn sm gh" data-a="paym" data-id="${s.id}" data-v="${o.m}">T${Number(o.m.slice(5))}/${o.m.slice(0,4)}: ${money(o.rest)}</button>`).join('')}</div><p class="hint">Bấm vào từng tháng để thu hoặc miễn tiền tháng đó.</p></div>`:''}${ps.length?`<div class="list">${ps.map(p=>`<div class="row"><div class="gr"><b>${money(p.amount)}${p.w?'<span class="tag y">Miễn giảm</span>':''}</b><small>Ngày ${p.date.split('-').reverse().join('/')}${p.how&&!p.w?' · '+esc(p.how):''}</small></div>${p.w?'':`<button class="btn sm gh" data-a="rcpt" data-id="${p.id}">Phiếu thu</button>`}<button class="btn sm rd" data-a="delpay" data-id="${p.id}">Xóa</button></div>`).join('')}</div>`:''}<label>Số tiền thu<input id="pa" class="money" type="text" inputmode="numeric" autocomplete="off" value="${f.rest?fmtN(f.rest):''}"></label><div class="two"><label>Ngày thu<input id="pd" type="date" value="${today()}"></label><label>Hình thức<select id="ph"><option>Tiền mặt</option><option>Chuyển khoản</option></select></label></div><button class="btn" data-a="savepay" data-id="${s.id}">Lưu khoản thu</button>${f.rest||old.total?`<button class="btn gh" data-a="nhac" data-id="${s.id}">Soạn tin nhắc học phí</button>`:''}${f.rest?`<button class="btn ln" data-a="waive" data-id="${s.id}">Miễn ${money(f.rest)} còn lại của ${mLabel(fm)}</button><p class="hint">Miễn giảm: tháng này coi như đã đủ, nhưng không tính vào doanh thu.</p>`:''}`)}
 function addPay(sid,amount,date,how){const p={id:uid(),sid,month:fm,amount,date,how};S.pays.push(p);keep();return p}
 const TPL=[['Nhẹ nhàng',(s,x)=>`Dạ ${x.xung} chào phụ huynh em ${s.name} ạ. ${x.xung} xin gửi thông tin học phí ${x.thang} lớp ${x.lop}: ${x.tien}. Phụ huynh tiện lúc nào gửi giúp ${x.xung} nhé. Cảm ơn phụ huynh nhiều ạ!`],
   ['Bình thường',(s,x)=>`Kính chào phụ huynh em ${s.name}. ${x.xung} xin nhắc học phí ${x.thang} lớp ${x.lop} của em${x.part?' còn thiếu':''}: ${x.tien}. Phụ huynh vui lòng hoàn tất trong tuần này giúp ${x.xung}. Cảm ơn phụ huynh ạ.`],
   ['Trực tiếp',(s,x)=>`Kính gửi phụ huynh em ${s.name}. Học phí ${x.thang} lớp ${x.lop} của em hiện chưa hoàn tất (còn ${x.tien}). Mong phụ huynh thanh toán trước ngày ${x.han}. Nếu đã chuyển khoản, phụ huynh nhắn giúp ${x.xung} để kiểm tra ạ. Cảm ơn phụ huynh.`]];
-const payInfo=s=>ascii(s.name+' HP T'+Number(fm.slice(5))).slice(0,25);
-function remindText(s,i){const f=feeState(s,fm),c=cls(s.classId),d=new Date(Date.now()+3*864e5),st=S.set;
-  const x={xung:st.xung||'Thầy',thang:mLabel(fm),lop:c?c.name:'',tien:money(f.rest||f.due),part:f.st==='part',han:d.getDate()+'/'+(d.getMonth()+1)};
-  let t=TPL[i][1](s,x);if(st.acc){const bn=(BANKS.find(b=>b[0]===st.bin)||[])[1]||st.bank;t+=`\n\nChuyển khoản: ${bn?bn+' · ':''}STK ${st.acc}${st.holder?' · '+st.holder:''}\nNội dung: ${payInfo(s)}`}return t}
-function qrBlock(s){const st=S.set,f=feeState(s,fm);if(!st.acc||!st.bin)return`<p class="hint">💡 Vào <b>Báo cáo → Thông tin & tài khoản</b>, chọn ngân hàng và nhập số tài khoản để app tạo <b>mã QR chuyển khoản</b> cho phụ huynh quét.</p>`;
-  try{const code=vietqr(st.bin,st.acc,f.rest||f.due,payInfo(s));return`<div class="qr">${QR.svg(code,130)}<div><b>Mã QR chuyển khoản</b><p class="sub">${money(f.rest||f.due)} · ${esc(payInfo(s))}</p><button class="btn sm or" data-a="qrimg" data-id="${s.id}">${ic('dl')} Lưu ảnh mã QR</button></div></div><p class="hint">Gửi ảnh mã QR qua Zalo, phụ huynh quét bằng app ngân hàng là điền sẵn số tiền và nội dung. <b>Lần đầu hãy tự quét thử</b> để kiểm tra.</p>`}catch(e){return''}}
+// Số tiền cần nhắc: mọi tháng còn nợ tính đến tháng đang xem (fm)
+function dueInfo(s){const o=owe(s,fm);if(o.total)return o;const f=feeState(s,fm);return{months:[{m:fm,rest:f.due}],total:f.due}}
+// Nội dung chuyển khoản (không dấu, tối đa 25 ký tự): giữ đủ phần "HP T9 T10"; tên dài thì bỏ bớt họ, đệm ở đầu
+const payInfo=(s,ms)=>{const n=ms.map(m=>Number(m.slice(5))),suf='HP '+(n.length>3?'T'+n[0]+'-T'+n[n.length-1]:n.map(x=>'T'+x).join(' ')),max=24-suf.length;
+  let w=ascii(s.name).split(' ');const lt=w.filter(x=>/[A-Za-z]/.test(x));if(lt.length)w=lt;   // bỏ "4 7" (lớp ở trường)
+  while(w.length>1&&w.join(' ').length>max)w.shift();return(w.join(' ').slice(0,Math.max(0,max))+' '+suf).trim().slice(0,25)};
+function remindText(s,i){const o=dueInfo(s),ms=o.months.map(e=>e.m),c=cls(s.classId),d=new Date(Date.now()+3*864e5),st=S.set;
+  const x={xung:st.xung||'Thầy',thang:mList(ms),lop:c?c.name:'',tien:money(o.total),part:ms.length===1&&feeState(s,ms[0]).st==='part',han:d.getDate()+'/'+(d.getMonth()+1)};
+  let t=TPL[i][1](s,x);if(ms.length>1)t+=`\n(Chi tiết: ${o.months.map(e=>'T'+Number(e.m.slice(5))+': '+money(e.rest)).join(', ')})`;
+  if(st.acc){const bn=(BANKS.find(b=>b[0]===st.bin)||[])[1]||st.bank;t+=`\n\nChuyển khoản: ${bn?bn+' · ':''}STK ${st.acc}${st.holder?' · '+st.holder:''}\nNội dung: ${payInfo(s,ms)}`}return t}
+function qrBlock(s){const st=S.set,o=dueInfo(s),info=payInfo(s,o.months.map(e=>e.m));if(!st.acc||!st.bin)return`<p class="hint">💡 Vào <b>Báo cáo → Thông tin & tài khoản</b>, chọn ngân hàng và nhập số tài khoản để app tạo <b>mã QR chuyển khoản</b> cho phụ huynh quét.</p>`;
+  try{const code=vietqr(st.bin,st.acc,o.total,info);return`<div class="qr">${QR.svg(code,130)}<div><b>Mã QR chuyển khoản</b><p class="sub">${money(o.total)} · ${esc(info)}</p><button class="btn sm or" data-a="qrimg" data-id="${s.id}">${ic('dl')} Lưu ảnh mã QR</button></div></div><p class="hint">Gửi ảnh mã QR qua Zalo, phụ huynh quét bằng app ngân hàng là điền sẵn số tiền và nội dung. <b>Lần đầu hãy tự quét thử</b> để kiểm tra.</p>`}catch(e){return''}}
 function remind(s,i=0){msgSheet('Nhắc học phí · '+esc(s.name),s,remindText(s,i),`<div class="seg">${TPL.map((t,k)=>`<button class="btn sm ${k===i?'':'gh'}" data-a="tpl" data-id="${s.id}" data-v="${k}">${t[0]}</button>`).join('')}</div>`,qrBlock(s))}
-function remindAll(){fm=fm||cm();const un=unpaid(fm);if(!un.length)return toast('Tất cả đã nộp đủ học phí '+mLabel(fm));
-  sheet(`<h3>Nhắc học phí ${mLabel(fm)}</h3><p class="sub">${un.length} phụ huynh chưa nộp đủ. Bấm từng em để soạn tin riêng (kèm mã QR nếu có).</p><div class="list">${un.map(s=>{const f=feeState(s,fm);return`<div class="row"><i class="av">${esc(initial(s.name))}</i><div class="gr"><b>${esc(s.name)}</b><small>Còn ${money(f.rest)}${s.pp?'':' · chưa có SĐT'}</small></div><button class="btn sm" data-a="nhac" data-id="${s.id}">Soạn tin</button></div>`}).join('')}</div>`)}
-async function qrImage(s){const st=S.set,f=feeState(s,fm),m=QR.encode(vietqr(st.bin,st.acc,f.rest||f.due,payInfo(s))),n=m.length,sc=10,q=4,W=(n+2*q)*sc,H=W+120;
+function remindAll(){fm=fm||cm();const un=debtors(fm);if(!un.length)return toast('Tất cả đã nộp đủ học phí đến '+mLabel(fm));
+  sheet(`<h3>Nhắc học phí</h3><p class="sub">${un.length} phụ huynh còn nợ tính đến ${mLabel(fm)}, tổng <b>${money(un.reduce((a,x)=>a+x.o.total,0))}</b>. Bấm từng em để soạn tin riêng (kèm mã QR nếu có).</p><div class="list">${un.map(({s,o})=>`<div class="row"><i class="av">${esc(initial(s.name))}</i><div class="gr"><b>${esc(s.name)}</b><small>Còn ${money(o.total)}${o.months.length>1?' · '+mList(o.months.map(e=>e.m)):''}${s.pp?'':' · chưa có SĐT'}</small></div><button class="btn sm" data-a="nhac" data-id="${s.id}">Soạn tin</button></div>`).join('')}</div>`)}
+async function qrImage(s){const st=S.set,o=dueInfo(s),ms=o.months.map(e=>e.m),m=QR.encode(vietqr(st.bin,st.acc,o.total,payInfo(s,ms))),n=m.length,sc=10,q=4,W=(n+2*q)*sc,H=W+120;
   const cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,W,H);g.fillStyle='#000';
   for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(m[r][c])g.fillRect((c+q)*sc,(r+q)*sc,sc,sc);
-  g.textAlign='center';g.fillStyle='#13306a';g.font='bold 30px system-ui,sans-serif';g.fillText(money(f.rest||f.due),W/2,W+40);
-  g.fillStyle='#333';g.font='22px system-ui,sans-serif';g.fillText(`${s.name} · HP ${mLabel(fm)}`,W/2,W+76);g.fillStyle='#888';g.font='18px system-ui,sans-serif';g.fillText(((BANKS.find(b=>b[0]===st.bin)||[])[1]||'')+' · '+st.acc,W/2,W+104);
+  g.textAlign='center';g.fillStyle='#13306a';g.font='bold 30px system-ui,sans-serif';g.fillText(money(o.total),W/2,W+40);
+  g.fillStyle='#333';g.font='22px system-ui,sans-serif';g.fillText(`${s.name} · HP ${mList(ms)}`,W/2,W+76,W-20);g.fillStyle='#888';g.font='18px system-ui,sans-serif';g.fillText(((BANKS.find(b=>b[0]===st.bin)||[])[1]||'')+' · '+st.acc,W/2,W+104);
   const blob=await new Promise(ok=>cv.toBlob(ok,'image/png'));await saveFile(blob,`QR-hoc-phi-${ascii(s.name).replace(/ /g,'-')}-T${Number(fm.slice(5))}.png`,true)}
+// Đọc số tiền bằng chữ: 1.005.000 → "Một triệu không trăm lẻ năm nghìn đồng"
+const DS=['không','một','hai','ba','bốn','năm','sáu','bảy','tám','chín'];
+function doc3(n,full){const t=Math.floor(n/100),c=Math.floor(n/10)%10,d=n%10,r=[];
+  if(full||t)r.push(DS[t]+' trăm');
+  if(c===0){if(d&&(full||t))r.push('lẻ')}else r.push(c===1?'mười':DS[c]+' mươi');
+  if(d)r.push(d===1&&c>1?'mốt':d===5&&c>0?'lăm':DS[d]);return r.join(' ')}
+function words(n){n=Math.round(+n||0);if(n<=0)return'Không đồng';const U=['','nghìn','triệu','tỷ'],g=[];while(n>0&&g.length<4){g.push(n%1000);n=Math.floor(n/1000)}
+  const out=[];for(let i=g.length-1;i>=0;i--)if(g[i])out.push(doc3(g[i],i<g.length-1)+(U[i]?' '+U[i]:''));const s=out.join(' ');return s.charAt(0).toUpperCase()+s.slice(1)+' đồng'}
+// Phiếu thu học phí dạng ảnh, gửi phụ huynh qua Zalo
+async function receipt(p){const s=stuById(p.sid);if(!s||p.w)return;const st=S.set,c=cls(clsAt(s,p.month)),f=feeState(s,p.month);
+  const rows=[['Số phiếu',p.id.slice(-6).toUpperCase()],['Học sinh',s.name],['Lớp',c?c.name:''],['Học phí tháng',Number(p.month.slice(5))+'/'+p.month.slice(0,4)],['Ngày thu',p.date?p.date.split('-').reverse().join('/'):'']];if(p.how)rows.push(['Hình thức',p.how]);
+  const W=720,H=170+46*rows.length+228+(f.rest>0?40:0),cv=document.createElement('canvas');cv.width=W;cv.height=H;const g=cv.getContext('2d'),FF='system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+  const put=(t,x,y,size,w,col,max)=>{let z=size;g.font=`${w||''} ${z}px ${FF}`;while(max&&z>11&&g.measureText(t).width>max){z--;g.font=`${w||''} ${z}px ${FF}`}g.fillStyle=col;g.fillText(t,x,y)};
+  g.fillStyle='#fff';g.fillRect(0,0,W,H);const gr=g.createLinearGradient(0,0,W,0);gr.addColorStop(0,'#0f2a63');gr.addColorStop(1,'#1e9be9');g.fillStyle=gr;g.fillRect(0,0,W,120);
+  g.textAlign='center';put('PHIẾU THU HỌC PHÍ',W/2,58,34,'bold','#fff');put(st.title&&st.title!=='Sổ Lớp'?cap(st.title):who(),W/2,94,20,'','rgba(255,255,255,.9)',W-80);
+  let y=170;rows.forEach(([k,v])=>{g.textAlign='left';put(k,50,y,20,'','#6b7590');g.textAlign='right';put(v,W-50,y,23,'600','#14213d',W-290);y+=46});
+  g.strokeStyle='#e4e8f1';g.lineWidth=2;g.beginPath();g.moveTo(50,y-14);g.lineTo(W-50,y-14);g.stroke();
+  g.textAlign='center';y+=40;put(money(p.amount),W/2,y,46,'bold','#13306a');y+=38;put('('+words(p.amount)+')',W/2,y,19,'italic','#555',W-80);
+  if(f.rest>0){y+=40;put(`Còn lại ${mLabel(p.month)}: ${money(f.rest)}`,W/2,y,20,'600','#d64545',W-80)}
+  y+=58;put('Người thu: '+who(),W/2,y,21,'600','#14213d',W-80);y+=34;put('Cảm ơn quý phụ huynh!',W/2,y,18,'','#6b7590');put('Lập bằng Sổ Lớp · by Đ-LAB',W/2,H-18,14,'','#a0a8bc');
+  const blob=await new Promise(ok=>cv.toBlob(ok,'image/png'));await saveFile(blob,`Phieu-thu-${ascii(s.name).replace(/ /g,'-')}-T${Number(p.month.slice(5))}.png`,true)}
 
 /* ---------- Báo cáo & Thêm ---------- */
 function weekRange(){const t=new Date(),dw=(t.getDay()+6)%7,a=new Date(t.getFullYear(),t.getMonth(),t.getDate()-dw),b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+6);return[ymd(a),ymd(b),a,b]}
-function weekStats(){const[a,b]=weekRange();return S.classes.map(c=>{let n=0,p=0,t=0;for(const k in S.att){const[d,id]=k.split('|');if(id===c.id&&d>=a&&d<=b){n++;for(const q in S.att[k].m){t++;if(S.att[k].m[q]==='c')p++}}}return{c,n,p,t}})}
+function weekStats(){const[a,b]=weekRange();return S.classes.map(c=>{let n=0,p=0,t=0;for(const k in S.att){const[d,id]=k.split('|');if(id===c.id&&d>=a&&d<=b&&!S.att[k].off){n++;for(const q in S.att[k].m){t++;if(S.att[k].m[q]==='c')p++}}}return{c,n,p,t}})}
 const fdm=d=>d.getDate()+'/'+(d.getMonth()+1);
 function reportText(){const[,,a,b]=weekRange();let t=`📋 BÁO CÁO TUẦN ${fdm(a)} – ${fdm(b)}\n`;weekStats().forEach(x=>{t+=`\n• ${x.c.name}: dạy ${x.n} buổi`+(x.t?`, chuyên cần ${Math.round(x.p/x.t*100)}%`:'')});return t+`\n\nCảm ơn quý phụ huynh đã đồng hành cùng các em.\n${who()}`}
 function stuText(s){const m=cm(),a=stuAtt(s.id,d=>d.slice(0,7)===m),c=cls(s.classId),f=feeState(s,m),x=S.set.xung||'Thầy';
-  const notes=[];for(const k in S.att){if(k.slice(0,7)!==m)continue;const v=S.att[k].m[s.id];if(v&&v!=='c')notes.push(`  - ${dLabel(k.slice(0,10))}: ${v==='p'?'có phép':'không phép'}${S.att[k].n&&S.att[k].n[s.id]?' ('+S.att[k].n[s.id]+')':''}`)}notes.sort();
-  return`Chào phụ huynh em ${s.name}. ${x} gửi báo cáo ${mLabel(m)} lớp ${c?c.name:''}:\n- Có mặt: ${a.c}/${a.t} buổi\n- Vắng: ${a.p+a.k} buổi${notes.length?'\n'+notes.join('\n'):''}\n- Học phí: ${f.st==='ok'?'đã nộp đủ':f.st==='free'?'không tính':f.st==='part'?'còn thiếu '+money(f.rest):'chưa nộp ('+money(f.due)+')'}\n\nNhận xét: \nCảm ơn phụ huynh.`}
+  const notes=[],learn=[],cmts=[];for(const k of Object.keys(S.att).sort()){if(k.slice(0,7)!==m)continue;const r=S.att[k],v=r.m[s.id],dl=dLabel(k.slice(0,10));if(!v)continue;
+    if(v!=='c')notes.push(`  - ${dl}: ${v==='p'?'có phép':'không phép'}${r.n&&r.n[s.id]?' ('+r.n[s.id]+')':''}`);
+    if(v==='c'&&r.t)learn.push(`  - ${dl}: ${r.t}`);if(r.cm&&r.cm[s.id])cmts.push(`  - ${dl}: ${r.cm[s.id]}`)}
+  return`Chào phụ huynh em ${s.name}. ${x} gửi báo cáo ${mLabel(m)} lớp ${c?c.name:''}:\n- Có mặt: ${a.c}/${a.t} buổi\n- Vắng: ${a.p+a.k} buổi${notes.length?'\n'+notes.join('\n'):''}${learn.length?'\n- Nội dung đã học:\n'+learn.join('\n'):''}\n- Học phí: ${f.st==='ok'?'đã nộp đủ':f.st==='free'?'không tính':f.st==='part'?'còn thiếu '+money(f.rest):'chưa nộp ('+money(f.due)+')'}\n\nNhận xét:${cmts.length?'\n'+cmts.join('\n'):' '}\nCảm ơn phụ huynh.`}
 let installEvt=null;
 function vMore(){const[,,a,b]=weekRange(),ws=weekStats(),y=String(ry);
-  const mon=[...Array(12)].map((_,i)=>{const m=y+'-'+p2(i+1);return S.pays.filter(p=>p.month===m).reduce((s,p)=>s+(+p.amount||0),0)}),mx=Math.max(1,...mon),tot=mon.reduce((s,v)=>s+v,0);
+  const mon=[...Array(12)].map((_,i)=>{const m=y+'-'+p2(i+1);return S.pays.filter(p=>p.month===m&&isCash(p)).reduce((s,p)=>s+(+p.amount||0),0)}),mx=Math.max(1,...mon),tot=mon.reduce((s,v)=>s+v,0);
   const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
   const item=(c,i,t,s,a,btn)=>`<div class="row"><span class="ic" style="--tc:${c}">${ic(i)}</span><div class="gr"><b>${t}</b><small>${s}</small></div><button class="btn sm gh" data-a="${a}">${btn||'Mở'}</button></div>`;
   let left=`<div class="lbl">Tuần này · ${fdm(a)} – ${fdm(b)}</div>`+(ws.length?`<div class="list">${ws.map(x=>`<div class="row"><span class="ic" style="--tc:#2453b8">${ic('book')}</span><div class="gr"><b>${esc(x.c.name)}</b><small>${x.n} buổi đã điểm danh${x.t?` · chuyên cần ${Math.round(x.p/x.t*100)}%`:''}</small></div></div>`).join('')}</div>`:'<div class="card">Thêm lớp và điểm danh, báo cáo sẽ tự tổng hợp ở đây.</div>')+`<button class="btn" data-a="rep">Soạn báo cáo tuần gửi nhóm lớp</button>`;
@@ -532,8 +588,9 @@ function about(){sheet(`<div class="about"><img class="full" src="logo.png" alt=
 function csv(rows){return'﻿'+rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n')}
 function exportSheet(){sheet(`<h3>Xuất Excel</h3><p class="sub">File CSV mở được bằng Excel, Google Sheets, WPS.</p><button class="btn gh" data-a="ex" data-v="fee">Bảng học phí năm ${ry}</button><button class="btn gh" data-a="ex" data-v="att">Toàn bộ điểm danh</button><button class="btn gh" data-a="ex" data-v="stu">Danh sách học sinh & phụ huynh</button><p class="hint">File có số điện thoại phụ huynh, hãy cất ở nơi riêng tư.</p>`)}
 function doExport(k){let rows,name;const y=String(ry);
-  if(k==='fee'){rows=[['Học sinh','Lớp',...[...Array(12)].map((_,i)=>'T'+(i+1)),'Tổng']];S.students.forEach(s=>{const v=[...Array(12)].map((_,i)=>paidOf(s.id,y+'-'+p2(i+1)));if(v.some(Boolean)||!s.left)rows.push([s.name,(cls(s.classId)||{}).name||'',...v,v.reduce((a,b)=>a+b,0)])});name=`hoc-phi-${y}.csv`}
-  else if(k==='att'){rows=[['Ngày','Lớp','Học sinh','Trạng thái','Lý do']];Object.keys(S.att).sort().forEach(key=>{const[d,cid]=key.split('|'),r=S.att[key];Object.keys(r.m).forEach(sid=>{const s=stuById(sid);if(s)rows.push([d.split('-').reverse().join('/'),(cls(cid)||{}).name||'',s.name,{c:'Có mặt',p:'Vắng có phép',k:'Vắng không phép'}[r.m[sid]],(r.n&&r.n[sid])||''])})});name=`diem-danh-${today()}.csv`}
+  if(k==='fee'){rows=[['Học sinh','Lớp',...[...Array(12)].map((_,i)=>'T'+(i+1)),'Tổng']];S.students.forEach(s=>{const v=[...Array(12)].map((_,i)=>{const m=y+'-'+p2(i+1);return S.pays.filter(p=>p.sid===s.id&&p.month===m&&isCash(p)).reduce((a,p)=>a+(+p.amount||0),0)});if(v.some(Boolean)||!s.left)rows.push([s.name,(cls(s.classId)||{}).name||'',...v,v.reduce((a,b)=>a+b,0)])});name=`hoc-phi-${y}.csv`}
+  else if(k==='att'){rows=[['Ngày','Lớp','Học sinh','Trạng thái','Lý do','Nhận xét','Nội dung buổi học']];Object.keys(S.att).sort().forEach(key=>{const[d,cid]=key.split('|'),r=S.att[key],dd=d.split('-').reverse().join('/'),cn=(cls(cid)||{}).name||'';
+    if(r.off)rows.push([dd,cn,'','Nghỉ (không dạy)','','','']);Object.keys(r.m).forEach(sid=>{const s=stuById(sid);if(s)rows.push([dd,cn,s.name,{c:'Có mặt',p:'Vắng có phép',k:'Vắng không phép'}[r.m[sid]],(r.n&&r.n[sid])||'',(r.cm&&r.cm[sid])||'',r.t||''])})});name=`diem-danh-${today()}.csv`}
   else{rows=[['Học sinh','Lớp','Phụ huynh','Tên phụ huynh','Số điện thoại','Ghi chú','Tình trạng']];S.students.forEach(s=>rows.push([s.name,(cls(s.classId)||{}).name||'',s.pr,s.pn,s.pp,s.note,s.left?'Đã nghỉ':'Đang học']));name=`hoc-sinh-${today()}.csv`}
   saveFile(new Blob([csv(rows)],{type:'text/csv;charset=utf-8'}),name)}
 
@@ -592,8 +649,8 @@ function render(){$('#app').innerHTML=({home:vHome,classes:vClasses,students:vSt
 
 /* ---------- Xử lý nút bấm ---------- */
 const A={
-  tab:b=>{tab=b.dataset.v;render();scrollTo(0,0)},
-  gofees:()=>{fm=cm();tab='fees';render();scrollTo(0,0)},
+  tab:b=>go(b.dataset.v),
+  gofees:()=>{fm=cm();go('fees')},
   close:()=>closeSh(),
   undo:()=>{if(undoFn){undoFn();undoFn=null;$('#ts').hidden=true}},
   addcls:()=>clsForm(null), edcls:b=>clsForm(cls(b.dataset.id)), savecls:b=>saveCls(b.dataset.id),
@@ -602,25 +659,37 @@ const A={
   addstu:b=>addStuForm(b.dataset.id), savestu:()=>saveStu(), edstu:b=>edStuForm(stuById(b.dataset.id)), saveed:b=>saveEd(b.dataset.id),
   leave:b=>{const s=stuById(b.dataset.id);s.left=cm();closeSh();keep();toast(s.name+' đã nghỉ học (vẫn tính học phí '+mLabel(cm())+')',()=>{delete s.left;keep()})},
   back:b=>{const s=stuById(b.dataset.id);delete s.left;closeSh();keep();toast('Đã cho học trở lại')},
-  delstu:b=>{if(!arm(b))return;const id=b.dataset.id;S.students=S.students.filter(s=>s.id!==id);S.pays=S.pays.filter(p=>p.sid!==id);for(const k in S.att){if(S.att[k].m)delete S.att[k].m[id];if(S.att[k].n)delete S.att[k].n[id]}closeSh();keep();toast('Đã xóa học sinh')},
+  delstu:b=>{if(!arm(b))return;const id=b.dataset.id;S.students=S.students.filter(s=>s.id!==id);S.pays=S.pays.filter(p=>p.sid!==id);for(const k in S.att){if(S.att[k].m)delete S.att[k].m[id];if(S.att[k].n)delete S.att[k].n[id];if(S.att[k].cm)delete S.att[k].cm[id]}closeSh();keep();toast('Đã xóa học sinh')},
   contact:b=>{const s=stuById(b.dataset.id),c=cls(s.classId),x=S.set.xung||'Thầy';msgSheet('Hỏi thăm · '+esc(s.name),s,`Chào phụ huynh em ${s.name}. ${x} thấy em đã vắng ${absentStreak(s.id)} buổi gần đây ở lớp ${c?c.name:''}. ${x} muốn hỏi thăm sức khỏe và tình hình học của em. Nếu em cần học bù, phụ huynh nhắn ${x} để sắp xếp nhé. Cảm ơn phụ huynh ạ.`)},
   attpick:()=>attPick(),
   att:b=>openAtt(b.dataset.id,today()),
   tog:b=>{const id=b.dataset.id;cur.m[id]={c:'p',p:'k',k:'c'}[cur.m[id]];$('#ar-'+id).outerHTML=attRow(id);$('#asum').textContent=attSum()},
-  saveatt:()=>{if(!cur.ids.length)return closeSh();const n={};for(const id in cur.n)if(cur.n[id]&&cur.m[id]!=='c')n[id]=cur.n[id].trim();S.att[AK(cur.date,cur.cid)]={m:{...cur.m},n};closeSh();keep();toast('Đã lưu điểm danh '+dLabel(cur.date))},
+  cmt:b=>{const id=b.dataset.id;cur.sc[id]=1;$('#ar-'+id).outerHTML=attRow(id);const i=$(`[data-cmt="${id}"]`);if(i)i.focus()},
+  saveatt:()=>{if(!cur.ids.length)return closeSh();const n={},c={};for(const id in cur.n)if(cur.n[id]&&cur.m[id]!=='c')n[id]=cur.n[id].trim();
+    for(const id in cur.c){const x=cur.c[id].trim();if(x)c[id]=x}
+    const r={m:{...cur.m},n},t=cur.t.trim();if(t)r.t=t;if(Object.keys(c).length)r.cm=c;S.att[AK(cur.date,cur.cid)]=r;closeSh();keep();toast('Đã lưu điểm danh '+dLabel(cur.date))},
+  missed:()=>missSheet(),
+  attd:b=>openAtt(b.dataset.id,b.dataset.v),
+  attoff:b=>{const k=AK(b.dataset.v,b.dataset.id),old=S.att[k];S.att[k]={m:{},n:{},off:1};keep();
+    if(b.dataset.list)missSheet();else closeSh();toast('Đã đánh dấu nghỉ '+dLabel(b.dataset.v),()=>{if(old)S.att[k]=old;else delete S.att[k];keep()})},
   delatt:b=>{if(!arm(b))return;const k=AK(cur.date,cur.cid),old=S.att[k];delete S.att[k];closeSh();keep();toast('Đã xóa buổi điểm danh',()=>{S.att[k]=old;keep()})},
   announce:b=>announce(b.dataset.id), annk:b=>{ann.k=b.dataset.v;announce(ann.cid)},
   mo:b=>{fm=shiftM(fm,+b.dataset.v);render()},
-  payfull:b=>{const s=stuById(b.dataset.id),f=feeState(s,fm);if(!f.rest)return;const p=addPay(s.id,f.rest,today(),'');toast(`Đã thu ${money(f.rest)} của ${s.name}`,()=>{S.pays=S.pays.filter(x=>x.id!==p.id);keep()})},
+  payfull:b=>{const s=stuById(b.dataset.id),f=feeState(s,fm);if(!f.rest)return;const p=addPay(s.id,f.rest,today(),'');toast(`Đã thu ${money(f.rest)} của ${s.name}`,()=>{S.pays=S.pays.filter(x=>x.id!==p.id);keep()},['Phiếu thu',()=>receipt(p)])},
   paydt:b=>payDetail(stuById(b.dataset.id)),
-  savepay:b=>{const a=parseMoney($('#pa').value);if(a<=0)return toast('Nhập số tiền lớn hơn 0');addPay(b.dataset.id,a,$('#pd').value||today(),$('#ph').value);closeSh();toast('Đã lưu khoản thu '+money(a))},
+  paym:b=>{fm=b.dataset.v;render();payDetail(stuById(b.dataset.id))},
+  savepay:b=>{const a=parseMoney($('#pa').value);if(a<=0)return toast('Nhập số tiền lớn hơn 0');const p=addPay(b.dataset.id,a,$('#pd').value||today(),$('#ph').value);closeSh();toast('Đã lưu khoản thu '+money(a),null,['Phiếu thu',()=>receipt(p)])},
+  waive:b=>{if(!arm(b,'Miễn số tiền còn lại? Bấm lần nữa'))return;const s=stuById(b.dataset.id),f=feeState(s,fm);if(!f.rest)return;
+    const p={id:uid(),sid:s.id,month:fm,amount:f.rest,date:today(),how:'Miễn giảm',w:1};S.pays.push(p);keep();payDetail(s);toast('Đã miễn '+money(f.rest)+' '+mLabel(fm),()=>{S.pays=S.pays.filter(x=>x.id!==p.id);keep();closeSh()})},
+  rcpt:b=>{const p=S.pays.find(x=>x.id===b.dataset.id);if(p)receipt(p)},
+  tact:()=>{const f=actFn;$('#ts').hidden=true;actFn=null;if(f)f()},
   delpay:b=>{if(!arm(b,'Xóa?'))return;const p=S.pays.find(x=>x.id===b.dataset.id);S.pays=S.pays.filter(x=>x.id!==p.id);keep();payDetail(stuById(p.sid));toast('Đã xóa khoản thu',()=>{S.pays.push(p);keep();closeSh()})},
   nhac:b=>remind(stuById(b.dataset.id),0), tpl:b=>remind(stuById(b.dataset.id),+b.dataset.v),
   remindall:()=>{if(tab!=='fees')fm=cm();remindAll()},
   qrimg:b=>qrImage(stuById(b.dataset.id)),
   cpnm:()=>copy($('#nm').value),
   rep:()=>msgSheet('Báo cáo tuần',null,reportText()),
-  repstu:b=>{const s=stuById(b.dataset.id);msgSheet('Báo cáo · '+esc(s.name),s,stuText(s),'<p class="hint">Gõ thêm nhận xét vào dòng "Nhận xét:" trước khi gửi.</p>')},
+  repstu:b=>{const s=stuById(b.dataset.id);msgSheet('Báo cáo · '+esc(s.name),s,stuText(s),'<p class="hint">Nhận xét ghi lúc điểm danh đã được đưa vào. Có thể gõ thêm vào dòng "Nhận xét:" trước khi gửi.</p>')},
   yr:b=>{ry+=+b.dataset.v;render()},
   export:()=>exportSheet(), ex:b=>doExport(b.dataset.v),
   settings:()=>settingsForm(), guide:()=>guide(), about:()=>about(),
@@ -653,6 +722,7 @@ const A={
 };
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b||!A[b.dataset.a]||b.tagName==='A')return;e.preventDefault();A[b.dataset.a](b)});
 document.addEventListener('input',e=>{const t=e.target;if(t.dataset.note&&cur)cur.n[t.dataset.note]=t.value;
+  if(t.dataset.cmt&&cur)cur.c[t.dataset.cmt]=t.value;if(t.id==='at'&&cur)cur.t=t.value;
   if(t.id==='q'){qStu=t.value;$('#stul').innerHTML=stuList()}
   if(t.id==='hq'){qHome=t.value;$('#hres').innerHTML=homeSearch()}
   if(['n1','n2','n3','n4'].includes(t.id))$('#nm').value=annText();
@@ -762,7 +832,7 @@ function syncForm(){if(GOOGLE_CLIENT_ID)loadGIS().catch(()=>{});if(!GOOGLE_CLIEN
   <button class="btn" data-a="syncon">Đăng nhập Google & bật đồng bộ</button><p class="hint">App chỉ xin quyền truy cập <b>đúng file do Sổ Lớp tạo</b>, không xem được các file khác trong Drive.</p>`)}
 
 /* ---------- Khởi động ---------- */
-(async()=>{await load();resetSnap();if(SC.on){syncErr='need';loadGIS().catch(()=>{})}document.title=S.set.title;if(S.pin&&typeof S.pin!=='object')S.pin=null;if(!S.set.ob&&(S.classes.length||S.students.length)){S.set.ob=1;save()}lock();render();if(!S.set.ob&&!S.pin)onboard();
+(async()=>{try{history.replaceState({tab:'home'},'')}catch(e){}await load();resetSnap();if(SC.on){syncErr='need';loadGIS().catch(()=>{})}document.title=S.set.title;if(S.pin&&typeof S.pin!=='object')S.pin=null;if(!S.set.ob&&(S.classes.length||S.students.length)){S.set.ob=1;save()}lock();render();if(!S.set.ob&&!S.pin)onboard();
   try{if(navigator.storage&&navigator.storage.persisted)persisted=await navigator.storage.persisted()}catch(e){}
   if(S.students.length)askPersist();
   if('serviceWorker'in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
