@@ -55,7 +55,8 @@ svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke
 .quote{position:relative;z-index:1;margin:10px 0 0;font-style:italic;font-size:14.5px;color:rgba(255,255,255,.92);max-width:520px}
 .tstats{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 .tstats span,.tstats .schip{display:inline-flex;align-items:center;gap:6px;margin:0;border-radius:20px;padding:5px 11px;background:rgba(255,255,255,.14);font-size:13px;color:#fff}
-.tstats svg.i{width:14px;height:14px}.tstats .hot{background:var(--or)}
+.tstats svg.i{width:14px;height:14px}.tstats .hot{background:var(--or)}.tstats .schip span{background:none;padding:0}
+.tstats .schip.warn{background:var(--or)}
 .plane{display:none;position:absolute;z-index:0;pointer-events:none}
 #lk .seg{justify-content:flex-start}#lk .btn.ln{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.45)}
 .ava{width:46px;height:46px;border-radius:50%;background:#fff;display:grid;place-items:center;border:2px solid rgba(255,255,255,.7);flex:none;cursor:pointer;padding:0;overflow:hidden}
@@ -214,7 +215,7 @@ textarea{min-height:130px;resize:vertical}
    Chạy 100% trên máy, không gửi dữ liệu đi đâu.
    Dữ liệu lưu trong IndexedDB (kho của trình duyệt) + bản dự phòng localStorage.
    ========================================================= */
-const VERSION='1.3.2';
+const VERSION='1.4.0';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -282,10 +283,34 @@ let S=BLANK();
 function normalize(d){const b=BLANK();d=d||{};const n={...b,...d,set:{...b.set,...(d.set||{})},classes:d.classes||[],students:d.students||[],att:d.att||{},pays:d.pays||[],seen:d.seen||{}};
   if(n.set.title==='Lớp của thầy Định'){n.set.title='Sổ Lớp';if(!n.set.name)n.set.name='Định'}
   if(!n.set.bin&&n.set.bank){const f=BANKS.find(x=>x[1].toLowerCase()===n.set.bank.toLowerCase());if(f)n.set.bin=f[0]}
-  return n}
-function idb(){return new Promise((ok,no)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=()=>r.result.createObjectStore(ST);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
-async function dbGet(){try{const d=await idb();return await new Promise((ok,no)=>{const q=d.transaction(ST).objectStore(ST).get('state');q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}catch(e){return null}}
-async function dbPut(txt){try{const d=await idb();await new Promise((ok,no)=>{const t=d.transaction(ST,'readwrite');t.objectStore(ST).put(txt,'state');t.oncomplete=ok;t.onerror=()=>no(t.error)})}catch(e){}}
+  return clean(n)}
+// Làm sạch dữ liệu nạp vào (từ máy, file sao lưu, Drive): đúng kiểu, đúng định dạng.
+// Chặn file sao lưu "chế" sẵn mã độc chèn vào giao diện. Dữ liệu hợp lệ giữ nguyên.
+const reM=/^\d{4}-(0[1-9]|1[0-2])$/, reD=/^\d{4}-\d\d-\d\d$/, reT=/^([01]\d|2[0-3]):[0-5]\d$/, okId=x=>/^[\w-]{1,64}$/.test(x);
+const str=v=>v==null?'':String(v), isObj=o=>o&&typeof o==='object';
+function clean(n){const map={};
+  // Mã bản ghi lạ → mã mới, tính cố định từ mã cũ (máy nào cũng ra cùng một mã, đồng bộ không bị nhân đôi)
+  const hid=id=>{let h=2166136261;for(let i=0;i<id.length;i++)h=Math.imul(h^id.charCodeAt(i),16777619);return'x'+(h>>>0).toString(36)+id.length.toString(36)};
+  const fix=id=>{id=str(id);if(okId(id))return id;if(!id)return'x'+uid();return map[id]||(map[id]=hid(id))};
+  const ref=id=>{id=str(id);return okId(id)?id:(map[id]||'')};
+  const fees=(a,nul)=>Array.isArray(a)?a.filter(e=>isObj(e)&&reM.test(e.from)).map(e=>({from:e.from,fee:nul&&e.fee==null?null:(+e.fee||0)})):[];
+  for(const k of['title','xung','name','bank','bin','acc','holder'])n.set[k]=str(n.set[k]);
+  n.classes=n.classes.filter(isObj).map(c=>({...c,id:fix(c.id),name:str(c.name),place:str(c.place),
+    days:(Array.isArray(c.days)?c.days:[]).map(Number).filter(d=>Number.isInteger(d)&&d>=0&&d<=6),
+    start:reT.test(c.start)?c.start:'17:30',end:reT.test(c.end)?c.end:'19:00',fees:fees(c.fees)}));
+  n.students=n.students.filter(isObj).map(s=>{const o={...s,id:fix(s.id),name:str(s.name),pr:str(s.pr),pn:str(s.pn),pp:str(s.pp),note:str(s.note),fees:fees(s.fees,1)};
+    if(!reM.test(o.from))delete o.from;if(o.left&&!reM.test(o.left))o.left='0000-00';return o});
+  n.students.forEach(s=>{s.classId=ref(s.classId);if(Array.isArray(s.ch))s.ch=s.ch.filter(e=>isObj(e)&&(e.from==='0000-00'||reM.test(e.from))).map(e=>({from:e.from,cid:ref(e.cid)}));else delete s.ch});
+  n.pays=n.pays.filter(isObj).map(p=>({...p,id:fix(p.id),sid:ref(p.sid),month:str(p.month),amount:+p.amount||0,date:reD.test(p.date)?p.date:'',how:str(p.how)}));
+  const att={};for(const k in n.att){const r=n.att[k],[d,c]=k.split('|'),cid=ref(c);if(!reD.test(d)||!cid||!isObj(r)||!isObj(r.m))continue;
+    const m={},nt={};for(const sid in r.m){const i=ref(sid);if(i&&['c','p','k'].includes(r.m[sid])){m[i]=r.m[sid];if(isObj(r.n)&&r.n[sid])nt[i]=str(r.n[sid])}}
+    att[d+'|'+cid]={...r,m,n:nt}}
+  n.att=att;if(!isObj(n.del))delete n.del;return n}
+let dbP=null;   // giữ một kết nối IndexedDB dùng chung, không mở mới mỗi lần lưu
+function idb(){return dbP||(dbP=new Promise((ok,no)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=()=>r.result.createObjectStore(ST);r.onsuccess=()=>{r.result.onclose=r.result.onversionchange=()=>{try{r.result.close()}catch(e){}dbP=null};ok(r.result)};r.onerror=()=>{dbP=null;no(r.error)}}))}
+async function kvGet(k){try{const d=await idb();return await new Promise((ok,no)=>{const q=d.transaction(ST).objectStore(ST).get(k);q.onsuccess=()=>ok(q.result);q.onerror=()=>no(q.error)})}catch(e){return null}}
+async function kvPut(k,v){try{const d=await idb();await new Promise((ok,no)=>{const t=d.transaction(ST,'readwrite');v===undefined?t.objectStore(ST).delete(k):t.objectStore(ST).put(v,k);t.oncomplete=ok;t.onerror=()=>no(t.error)})}catch(e){}}
+const dbGet=()=>kvGet('state'), dbPut=txt=>kvPut('state',txt);
 let saveQ=Promise.resolve();
 function save(){if(typeof stamp==='function')stamp();S.savedAt=Date.now();const txt=JSON.stringify(S);try{localStorage.setItem(LS,txt)}catch(e){}saveQ=saveQ.then(()=>dbPut(txt));askPersist();if(typeof queueSync==='function')queueSync()}
 async function load(){let a=null,b=null;try{const t=await dbGet();if(t)a=JSON.parse(t)}catch(e){}try{const t=localStorage.getItem(LS);if(t)b=JSON.parse(t)}catch(e){}
@@ -299,7 +324,9 @@ const stuById=id=>S.students.find(s=>s.id===id);
 // Lịch sử học phí [{from:'YYYY-MM',fee}]: đổi học phí không làm sai các tháng cũ
 function feeAt(list,m,strict){if(!list||!list.length)return null;const a=[...list].sort((x,y)=>x.from<y.from?-1:1);let f=strict?null:a[0].fee;for(const e of a)if(e.from<=m)f=e.fee;return f}
 const classFee=(c,m)=>c?(feeAt(c.fees,m)||0):0;
-function stuFee(s,m){const own=feeAt(s.fees,m,true);return own!=null?own:classFee(cls(s.classId),m)}
+// Lịch sử chuyển lớp ch:[{from:'YYYY-MM',cid}]: tháng cũ vẫn tính học phí theo lớp cũ
+function clsAt(s,m){const h=s.ch;if(!h||!h.length)return s.classId;const a=[...h].sort((x,y)=>x.from<y.from?-1:1);let id=a[0].cid;for(const e of a)if(e.from<=m)id=e.cid;return id}
+function stuFee(s,m){const own=feeAt(s.fees,m,true);return own!=null?own:classFee(cls(clsAt(s,m)),m)}
 const enrolled=(s,m)=>(s.from||'0000-00')<=m&&(!s.left||m<=s.left);
 const classStu=cid=>S.students.filter(s=>s.classId===cid&&!s.left).sort((a,b)=>a.name.localeCompare(b.name,'vi'));
 const paidOf=(sid,m)=>S.pays.filter(p=>p.sid===sid&&p.month===m).reduce((a,p)=>a+(+p.amount||0),0);
@@ -399,11 +426,13 @@ function saveStu(){const cid=$('#g1').value,lines=$('#g2').value.split(/\r?\n/).
   lines.forEach(l=>{let name=l,pp='';const mm=l.match(/^(.*?)[\s,;:\t\-–]+(\+?\d[\d .]{7,}\d)$/);if(mm){name=mm[1].trim();pp=mm[2].replace(/\s|\./g,'')}if(name)S.students.push({id:uid(),name,classId:cid,pp,pr:'',pn:'',note:'',fees:[],from:cm()})});
   closeSh();keep();toast('Đã thêm '+lines.length+' học sinh')}
 function edStuForm(s){const m=cm(),own=feeAt(s.fees,m,true),c=cls(s.classId);
-  sheet(`<h3>Sửa học sinh</h3><label>Họ tên<input id="e1" value="${esc(s.name)}"></label><label>Lớp<select id="e2">${S.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="two"><label>Phụ huynh là<input id="e3" value="${esc(s.pr)}" placeholder="Mẹ, Ba, Bà…"></label><label>Tên phụ huynh<input id="e4" value="${esc(s.pn)}"></label></div><label>Số điện thoại (Zalo)<input id="e5" type="tel" inputmode="tel" value="${esc(s.pp)}"></label><label>Ghi chú<input id="e6" value="${esc(s.note)}" placeholder="Đón con lúc 19:00, dị ứng…"></label><label>Học phí riêng / tháng (để trống = theo lớp${c?': '+money(classFee(c,m)):''})<input id="e7" class="money" type="text" inputmode="numeric" autocomplete="off" value="${own!=null?fmtN(own):''}" placeholder="Ví dụ giảm cho anh chị em"></label><div class="two"><label>Áp dụng từ tháng<input id="e8" type="month" value="${m}"></label><label>Bắt đầu học từ<input id="e9" type="month" value="${s.from||m}"></label></div><button class="btn" data-a="saveed" data-id="${s.id}">Lưu</button><div class="acts">${s.left?`<button class="btn gh" data-a="back" data-id="${s.id}">Học trở lại</button>`:`<button class="btn ln" data-a="leave" data-id="${s.id}">Cho nghỉ học</button>`}<button class="btn rd" data-a="delstu" data-id="${s.id}">Xóa hẳn</button></div><p class="hint">"Cho nghỉ học" giữ lại lịch sử học phí và điểm danh. "Xóa hẳn" xóa mọi dữ liệu của em này.</p>`)}
-function saveEd(id){const s=stuById(id),n=$('#e1').value.trim();if(!n)return toast('Tên không được để trống');
+  sheet(`<h3>Sửa học sinh</h3><label>Họ tên<input id="e1" value="${esc(s.name)}"></label><label>Lớp<select id="e2">${S.classes.map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label><div class="two"><label>Phụ huynh là<input id="e3" value="${esc(s.pr)}" placeholder="Mẹ, Ba, Bà…"></label><label>Tên phụ huynh<input id="e4" value="${esc(s.pn)}"></label></div><label>Số điện thoại (Zalo)<input id="e5" type="tel" inputmode="tel" value="${esc(s.pp)}"></label><label>Ghi chú<input id="e6" value="${esc(s.note)}" placeholder="Đón con lúc 19:00, dị ứng…"></label><label>Học phí riêng / tháng (để trống = theo lớp${c?': '+money(classFee(c,m)):''})<input id="e7" class="money" type="text" inputmode="numeric" autocomplete="off" value="${own!=null?fmtN(own):''}" placeholder="Ví dụ giảm cho anh chị em"></label><div class="two"><label>Áp dụng từ tháng<input id="e8" type="month" value="${m}"></label><label>Bắt đầu học từ<input id="e9" type="month" value="${s.from||m}"></label></div><button class="btn" data-a="saveed" data-id="${s.id}">Lưu</button><div class="acts">${s.left?`<button class="btn gh" data-a="back" data-id="${s.id}">Học trở lại</button>`:`<button class="btn ln" data-a="leave" data-id="${s.id}">Cho nghỉ học</button>`}<button class="btn rd" data-a="delstu" data-id="${s.id}">Xóa hẳn</button></div><p class="hint">"Cho nghỉ học" giữ lại lịch sử học phí và điểm danh. "Xóa hẳn" xóa mọi dữ liệu của em này. Chuyển lớp: từ tháng này tính học phí theo lớp mới, các tháng trước vẫn theo lớp cũ.</p>`)}
+function saveEd(id){const s=stuById(id),n=$('#e1').value.trim(),oldC=s.classId;if(!n)return toast('Tên không được để trống');
   Object.assign(s,{name:n,classId:$('#e2').value,pr:$('#e3').value.trim(),pn:$('#e4').value.trim(),pp:$('#e5').value.trim(),note:$('#e6').value.trim(),from:$('#e9').value||s.from||cm()});
   const v=$('#e7').value.trim(),from=$('#e8').value||cm(),cur0=feeAt(s.fees,from,true),nv=v===''?null:parseMoney(v);
   if(cur0!==nv){s.fees=(s.fees||[]).filter(e=>e.from!==from);s.fees.push({from,fee:nv})}
+  // Chuyển lớp: ghi lại lịch sử để các tháng trước vẫn tính theo lớp cũ (em mới vào học tháng này thì chỉ cần đổi lớp)
+  if(s.classId!==oldC){const m0=cm(),h=s.ch&&s.ch.length?s.ch:null;if(h||(s.from||'0000-00')<m0)s.ch=(h||[{from:'0000-00',cid:oldC}]).filter(e=>e.from!==m0).concat({from:m0,cid:s.classId})}
   closeSh();keep();toast('Đã lưu')}
 
 /* ---------- Điểm danh: 'c' có mặt, 'p' vắng có phép, 'k' vắng không phép ---------- */
@@ -516,8 +545,10 @@ const hasCrypto=()=>!!(window.crypto&&crypto.subtle);
 async function pbkdf(pw,salt,it){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits','deriveKey']);return{k,p:{name:'PBKDF2',salt,iterations:it,hash:'SHA-256'}}}
 async function pinHash(pin,salt){const{k,p}=await pbkdf(pin,b64d(salt),150000);return b64e(new Uint8Array(await crypto.subtle.deriveBits(p,k,256)))}
 async function aesKey(pw,salt){const{k,p}=await pbkdf(pw,salt,250000);return crypto.subtle.deriveKey(p,k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
-async function encrypt(txt,pw){const salt=rnd(16),iv=rnd(12),key=await aesKey(pw,salt);const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(txt));return{enc:1,salt:b64e(salt),iv:b64e(iv),data:b64e(new Uint8Array(ct))}}
-async function decrypt(o,pw){const key=await aesKey(pw,b64d(o.salt));return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(o.iv)},key,b64d(o.data)))}
+async function encryptK(txt,key,salt){const iv=rnd(12);const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(txt));return{enc:1,salt,iv:b64e(iv),data:b64e(new Uint8Array(ct))}}
+async function decryptK(o,key){return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(o.iv)},key,b64d(o.data)))}
+async function encrypt(txt,pw){const salt=rnd(16);return encryptK(txt,await aesKey(pw,salt),b64e(salt))}
+async function decrypt(o,pw){return decryptK(o,await aesKey(pw,b64d(o.salt)))}
 
 /* ---------- Lưu file ra máy ---------- */
 async function saveFile(blob,name,share){
@@ -539,11 +570,11 @@ function fromOld(d){const months=[...Object.keys(d.paid||{}).map(k=>k.slice(0,7)
 async function doRestore(text){let d;try{d=JSON.parse(text)}catch(e){return toast('Nội dung không phải bản sao lưu hợp lệ')}
   try{if(d.enc){const pw=$('#rp').value;if(!pw)return toast('File có mã hóa, hãy nhập mật khẩu');d=JSON.parse(await decrypt(d,pw))}else if(d.app==='lop-hoc'&&d.data)d=d.data}catch(e){return toast('Sai mật khẩu hoặc file bị hỏng')}
   if(!d||!Array.isArray(d.classes)||!Array.isArray(d.students))return toast('Bản sao lưu không hợp lệ');
-  const n=d.v===2?normalize(d):fromOld(d);const pin=S.pin;S=n;S.pin=pin;S.lastBackup=Date.now();closeSh();keep();toast(`Đã khôi phục ${S.classes.length} lớp, ${S.students.length} học sinh`)}
+  const n=normalize(d.v===2?d:fromOld(d));const pin=S.pin;S=n;S.pin=pin;S.lastBackup=Date.now();closeSh();keep();toast(`Đã khôi phục ${S.classes.length} lớp, ${S.students.length} học sinh`)}
 
 /* ---------- Khóa PIN ---------- */
 function lock(){if(!S.pin)return;const e=$('#lk');e.innerHTML=`<div><img class="logo" src="mark.png" alt=""><h2>${esc(S.set.title)}</h2><p style="opacity:.85">Nhập mã PIN để mở</p><input id="pi" type="password" inputmode="numeric" maxlength="6" autocomplete="off"><button class="btn" data-a="unlock">Mở khóa</button></div>`;e.hidden=false;setTimeout(()=>{const i=$('#pi');if(i)i.focus()},50)}
-function pinForm(){if(!hasCrypto())return toast('Trình duyệt này không hỗ trợ mã PIN');sheet(`<h3>${S.pin?'Đổi hoặc tắt mã PIN':'Đặt mã PIN'}</h3><p class="sub">PIN khóa màn hình app mỗi khi thoát ra, để người khác cầm máy không xem được.</p><label>Mã PIN mới (4 đến 6 chữ số)<input id="p1" type="password" inputmode="numeric" maxlength="6"></label><label>Nhập lại mã PIN<input id="p2" type="password" inputmode="numeric" maxlength="6"></label><button class="btn" data-a="savepin">Lưu mã PIN</button>${S.pin?'<button class="btn rd" data-a="offpin">Tắt mã PIN</button>':''}<p class="hint">Quên PIN: phải xóa dữ liệu trang web trong cài đặt trình duyệt rồi khôi phục từ file sao lưu.</p>`)}
+function pinForm(){if(!hasCrypto())return toast('Trình duyệt này không hỗ trợ mã PIN');sheet(`<h3>${S.pin?'Đổi hoặc tắt mã PIN':'Đặt mã PIN'}</h3><p class="sub">PIN khóa màn hình app mỗi khi thoát ra, để người khác cầm máy không xem được.</p><label>Mã PIN mới (4 đến 6 chữ số)<input id="p1" type="password" inputmode="numeric" maxlength="6"></label><label>Nhập lại mã PIN<input id="p2" type="password" inputmode="numeric" maxlength="6"></label><button class="btn" data-a="savepin">Lưu mã PIN</button>${S.pin?'<button class="btn rd" data-a="offpin">Tắt mã PIN</button>':''}<p class="hint">Lưu ý: PIN chỉ khóa màn hình, không mã hóa dữ liệu trên máy. Hãy đặt cả khóa màn hình cho điện thoại/máy tính.</p><p class="hint">Quên PIN: phải xóa dữ liệu trang web trong cài đặt trình duyệt rồi khôi phục từ file sao lưu.</p>`)}
 
 /* ---------- Màn hình chào mừng lần đầu ---------- */
 let obX='Thầy';
@@ -597,12 +628,19 @@ const A={
   backup:()=>backupForm(), dobk:b=>doBackup(b.dataset.v),
   restore:()=>restoreForm(), pick:()=>$('#fileIn').click(),
   dors:b=>{const t=$('#rb').value.trim();if(!t)return toast('Chọn file hoặc dán nội dung sao lưu');if(!arm(b,'Thay dữ liệu hiện tại? Bấm lần nữa'))return;doRestore(t)},
-  wipe:b=>{sheet(`<h3>Xóa toàn bộ dữ liệu</h3><p>Mọi lớp, học sinh, điểm danh, học phí trên máy này sẽ bị xóa và <b>không lấy lại được</b> nếu chưa sao lưu.</p><label>Gõ chữ XOA để xác nhận<input id="wc" autocomplete="off"></label><button class="btn rd" data-a="dowipe">Xóa vĩnh viễn</button>`)},
-  dowipe:()=>{if($('#wc').value.trim().toUpperCase()!=='XOA')return toast('Gõ đúng chữ XOA');S=BLANK();closeSh();tab='home';keep();toast('Đã xóa toàn bộ dữ liệu')},
-  sync:()=>syncForm(), syncnow:()=>{if(!SC.on)return syncForm();syncNow(true)},
-  syncon:async()=>{const a=$('#sp1').value;if(a.length<8)return toast('Mật khẩu đồng bộ cần ít nhất 8 ký tự');if(a!==$('#sp2').value)return toast('Hai lần nhập không khớp');
-    if(!hasCrypto())return toast('Trình duyệt này không hỗ trợ mã hóa');try{await getToken()}catch(e){return toast(e.message)}SC={...SC,on:true,pass:a,fileId:'',email:''};saveSC();closeSh();await syncNow(true);if(!syncErr)toast('Đã bật đồng bộ Google Drive')},
-  syncoff:b=>{if(!arm(b))return;SC={on:false,pass:'',fileId:'',email:'',last:0};saveSC();tok=null;closeSh();render();toast('Đã tắt đồng bộ trên máy này')},
+  wipe:b=>{sheet(`<h3>Xóa toàn bộ dữ liệu</h3><p>Mọi lớp, học sinh, điểm danh, học phí trên máy này sẽ bị xóa và <b>không lấy lại được</b> nếu chưa sao lưu.</p>${SC.on?'<p class="hint">☁️ Đồng bộ Google Drive trên máy này sẽ được <b>tắt</b>. Dữ liệu trên Drive và các máy khác vẫn giữ nguyên.</p>':''}<label>Gõ chữ XOA để xác nhận<input id="wc" autocomplete="off"></label><button class="btn rd" data-a="dowipe">Xóa vĩnh viễn</button>`)},
+  dowipe:()=>{if($('#wc').value.trim().toUpperCase()!=='XOA')return toast('Gõ đúng chữ XOA');if(syncing)return toast('Đang đồng bộ, thử lại sau giây lát');
+    // Tắt đồng bộ trước, và không ghi "bia mộ": việc xóa chỉ ở máy này, không lan sang Drive và máy khác
+    if(SC.on)syncReset();S=BLANK();snap=null;closeSh();tab='home';keep();toast('Đã xóa toàn bộ dữ liệu trên máy này')},
+  sync:()=>syncForm(), syncnow:async()=>{if(!SC.on||syncErr==='pass')return syncForm();await syncNow(true);if(syncErr==='pass')syncForm()},
+  syncon:async b=>{const a=$('#sp1').value;if(a.length<8)return toast('Mật khẩu đồng bộ cần ít nhất 8 ký tự');if(a!==$('#sp2').value)return toast('Hai lần nhập không khớp');
+    if(!hasCrypto())return toast('Trình duyệt này không hỗ trợ mã hóa');try{await getToken()}catch(e){return toast(e.message)}
+    b.disabled=true;b.textContent='Đang kết nối Google Drive…';SC={on:true,fileId:'',email:'',last:0,salt:''};await syncNow(true,a);
+    if(syncErr){syncReset();updSync();if(b.isConnected){b.disabled=false;b.textContent='Đăng nhập Google & bật đồng bộ'}return}   // lỗi (vd. sai mật khẩu): không bật, báo lỗi
+    closeSh();render();toast('Đã bật đồng bộ Google Drive')},
+  syncpass:async b=>{const a=$('#sp3').value;if(!a)return toast('Nhập mật khẩu đồng bộ');b.disabled=true;await syncNow(true,a);
+    if(!syncErr){closeSh();render();toast('Đã đồng bộ')}else if(b.isConnected)b.disabled=false},
+  syncoff:b=>{if(!arm(b))return;syncReset();closeSh();render();toast('Đã tắt đồng bộ trên máy này')},
   obx:b=>{const n=$('#ob1')?$('#ob1').value:'';obX=b.dataset.v;S.set.name=n;onboard();if(obX==='Khác'&&$('#ob0'))$('#ob0').focus()},
   obgo:()=>{let x=obX;if(!['Thầy','Cô'].includes(x)){x=($('#ob0')&&$('#ob0').value.trim())||'Bạn';x=x.charAt(0).toUpperCase()+x.slice(1)}
     Object.assign(S.set,{xung:x,name:cap($('#ob1').value),ob:1});const tt=cap($('#ob2').value);if(tt)S.set.title=tt;document.title=S.set.title;$('#lk').hidden=true;$('#lk').innerHTML='';keep();toast('Chào '+who()+'! Hãy thêm lớp đầu tiên nhé')},
@@ -637,9 +675,16 @@ addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;if(ta
 const GOOGLE_CLIENT_ID='932946735251-m8uaa90ca5mmcfiu76qigli2oggrh718.apps.googleusercontent.com'; // Client ID công khai (không phải mật khẩu)
 const SYNC_FILE='so-lop-dong-bo.json', SYNC_KEY='so-lop-sync';
 const SCOPE='https://www.googleapis.com/auth/drive.file';
-let SC={on:false,pass:'',fileId:'',email:'',last:0};try{SC={...SC,...JSON.parse(localStorage.getItem(SYNC_KEY)||'{}')}}catch(e){}
+// SC.salt: "muối" của khóa mã hóa (dùng chung mọi máy, ghi trong file trên Drive).
+// Không lưu mật khẩu đồng bộ: chỉ lưu khóa mã hóa đã tạo từ mật khẩu, dạng "không xuất ra được"
+// (CryptoKey trong IndexedDB) — kẻ gian có lấy được máy cũng không đọc ngược ra mật khẩu.
+// Bản cũ (≤1.3.2) lưu SC.pass: lần đồng bộ đầu tiên sẽ đổi sang khóa rồi xóa mật khẩu đi.
+let SC={on:false,fileId:'',email:'',last:0,salt:''};try{SC={...SC,...JSON.parse(localStorage.getItem(SYNC_KEY)||'{}')}}catch(e){}
 const saveSC=()=>{try{localStorage.setItem(SYNC_KEY,JSON.stringify(SC))}catch(e){}};
-let tok=null,tokExp=0,syncing=false,syncErr='',syncT=null,gisP=null;
+let tok=null,tokExp=0,syncing=false,syncAgain=false,syncErr='',syncT=null,gisP=null,SKEY=null;
+const MISMATCH='Mật khẩu đồng bộ không khớp với dữ liệu đã có trên Google Drive';
+async function useKey(key,salt){SKEY=key;SC.salt=salt;delete SC.pass;saveSC();await kvPut('synckey',key)}
+function syncReset(){clearTimeout(syncT);SC={on:false,fileId:'',email:'',last:0,salt:''};saveSC();SKEY=null;tok=null;syncErr='';kvPut('synckey',undefined)}
 const tokOK=()=>tok&&Date.now()<tokExp-60000;
 
 // Ghi dấu thời gian sửa (u) cho từng bản ghi, và "bia mộ" (del) cho bản ghi đã xóa
@@ -676,33 +721,44 @@ async function upload(body){const txt=JSON.stringify(body);
   const j=await(await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+bd},
     body:`--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${txt}\r\n--${bd}--`})).json();SC.fileId=j.id;saveSC()}
 const SHARED=st=>{const{pin,lastBackup,seen,savedAt,...r}=st;return r};   // không đồng bộ PIN và thông tin riêng của từng máy
-async function syncNow(interactive){
-  if(!GOOGLE_CLIENT_ID||!SC.on||syncing)return;
+// pass: mật khẩu vừa nhập (khi bật đồng bộ, hoặc khi app hỏi lại). Không có thì dùng khóa đã lưu.
+async function syncNow(interactive,pass){
+  if(!GOOGLE_CLIENT_ID||!SC.on)return;
+  if(syncing){syncAgain=true;return}   // đang đồng bộ: chạy thêm một lượt khi xong, để không sót thay đổi mới
   if(!tokOK()){if(!interactive){syncErr='need';updSync();return}try{await getToken()}catch(e){syncErr=e.message;updSync();if(interactive)toast(e.message);return}}
   syncing=true;syncErr='';updSync();
   try{
+    if(!SKEY)SKEY=await kvGet('synckey');
     if(!SC.email){try{const a=await(await gapi('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json();SC.email=a.user.emailAddress;saveSC()}catch(e){}}
     if(!SC.fileId)SC.fileId=await findFile();
     let remote=null;
     if(SC.fileId){const r=await gapi(`https://www.googleapis.com/drive/v3/files/${SC.fileId}?alt=media`).catch(e=>{if(/404/.test(e.message)){SC.fileId='';return null}throw e});
-      if(r){const o=await r.json();try{remote=JSON.parse(await decrypt(o,SC.pass))}catch(e){throw new Error('Mật khẩu đồng bộ không khớp với dữ liệu đã có trên Google Drive')}}}
+      if(r){const o=await r.json();
+        const same=SKEY&&SC.salt===o.salt,pw=pass||SC.pass;   // khóa đã lưu dùng được nếu cùng "muối"
+        if(!same&&!pw)throw new Error('pass');
+        const key=same&&!pass?SKEY:await aesKey(pw,b64d(o.salt));
+        try{remote=JSON.parse(await decryptK(o,key))}catch(e){throw new Error(pass||SC.pass?MISMATCH:'pass')}
+        if(key!==SKEY)await useKey(key,o.salt)}}
+    if(!SKEY||!SC.salt){const pw=pass||SC.pass;if(!pw)throw new Error('pass');const s=b64e(rnd(16));await useKey(await aesKey(pw,b64d(s)),s)}
+    if(!SC.on)return;   // đã tắt đồng bộ trong lúc chờ mạng
     stamp();
     if(remote){const keepLocal={pin:S.pin,lastBackup:S.lastBackup,seen:S.seen};S=normalize({...merge(S,remote),...keepLocal});}
-    const txt=JSON.stringify(S);try{localStorage.setItem(LS,txt)}catch(e){}await dbPut(txt);resetSnap();
-    await upload({app:'so-lop',v:3,at:new Date().toISOString(),...(await encrypt(JSON.stringify(SHARED(S)),SC.pass))});
+    const txt=JSON.stringify(S);try{localStorage.setItem(LS,txt)}catch(e){}saveQ=saveQ.then(()=>dbPut(txt));await saveQ;resetSnap();
+    await upload({app:'so-lop',v:3,at:new Date().toISOString(),...(await encryptK(JSON.stringify(SHARED(S)),SKEY,SC.salt))});
     SC.last=Date.now();saveSC();if(!shOpen)render();
-  }catch(e){syncErr=e.message;if(interactive)toast(e.message)}
-  syncing=false;updSync()}
-function queueSync(){if(!SC.on||!tokOK())return updSync();clearTimeout(syncT);syncT=setTimeout(()=>syncNow(false),4000)}
+  }catch(e){syncErr=e.message;if(interactive&&syncErr!=='pass')toast(e.message)}
+  finally{syncing=false;updSync();if(syncAgain){syncAgain=false;queueSync()}}}
+function queueSync(){if(!SC.on||!tokOK())return updSync();if(syncing){syncAgain=true;return}clearTimeout(syncT);syncT=setTimeout(()=>syncNow(false),4000)}
 function ago(t){const s=(Date.now()-t)/1000;return s<60?'vừa xong':s<3600?Math.floor(s/60)+' phút trước':s<86400?Math.floor(s/3600)+' giờ trước':new Date(t).toLocaleDateString('vi-VN')}
-function syncChip(){if(!GOOGLE_CLIENT_ID||!SC.on)return'';const t=syncing?'Đang đồng bộ…':syncErr==='need'?'Bấm để đồng bộ':syncErr?'Lỗi đồng bộ, bấm thử lại':'Đã đồng bộ '+ago(SC.last);
+function syncChip(){if(!GOOGLE_CLIENT_ID||!SC.on)return'';const t=syncing?'Đang đồng bộ…':syncErr==='need'?'Bấm để đồng bộ':syncErr==='pass'?'Cần nhập lại mật khẩu đồng bộ':syncErr?'Lỗi đồng bộ, bấm thử lại':'Đã đồng bộ '+ago(SC.last);
   return`<button class="schip ${syncErr?'warn':''}" data-a="syncnow">${ic('cloud')}<span>${t}</span></button>`}
 function updSync(){$$('.schip').forEach(e=>e.outerHTML=syncChip())}
 function syncForm(){if(GOOGLE_CLIENT_ID)loadGIS().catch(()=>{});if(!GOOGLE_CLIENT_ID)return sheet('<h3>Đồng bộ Google Drive</h3><p class="sub">Tính năng đang được cài đặt, sẽ có trong bản cập nhật tới.</p>');
+  if(SC.on&&syncErr==='pass')return sheet(`<h3>Nhập lại mật khẩu đồng bộ</h3><p class="sub">Dữ liệu trên Google Drive vừa được một máy khác lưu lại${SC.email?' ('+esc(SC.email)+')':''}. Nhập mật khẩu đồng bộ (giống trên các máy khác) để tiếp tục.</p><label>Mật khẩu đồng bộ<input id="sp3" type="password" autocomplete="current-password"></label><button class="btn" data-a="syncpass">Tiếp tục đồng bộ</button><button class="btn rd" data-a="syncoff">Tắt đồng bộ trên máy này</button>`);
   if(SC.on)return sheet(`<h3>Đồng bộ Google Drive</h3><div class="card ok">✓ Đang bật${SC.email?' · '+esc(SC.email):''}<br><small style="color:inherit">${SC.last?'Lần cuối: '+ago(SC.last):'Chưa đồng bộ lần nào'}</small></div>${syncErr&&syncErr!=='need'?`<p class="hint" style="color:var(--r)">${esc(syncErr)}</p>`:''}<button class="btn" data-a="syncnow">Đồng bộ ngay</button><button class="btn rd" data-a="syncoff">Tắt đồng bộ trên máy này</button><p class="hint">Tắt đồng bộ: dữ liệu trên máy này vẫn giữ nguyên, file trên Drive cũng không bị xóa.</p>`);
   sheet(`<h3>Đồng bộ Google Drive</h3><p class="sub">Dùng chung dữ liệu giữa điện thoại và máy tính. Dữ liệu được <b>mã hóa trên máy</b> rồi lưu vào <b>Google Drive của chính ${esc(S.set.xung)}</b>. Google và Đ-LAB đều không đọc được.</p>
   <label>Mật khẩu đồng bộ (ít nhất 8 ký tự)<input id="sp1" type="password" autocomplete="new-password"></label><label>Nhập lại mật khẩu<input id="sp2" type="password" autocomplete="new-password"></label>
-  <p class="hint">⚠️ <b>Dùng cùng một mật khẩu trên mọi máy.</b> Quên mật khẩu là không mở được dữ liệu trên Drive (vẫn còn dữ liệu trên từng máy). Hãy ghi mật khẩu ra giấy và cất kỹ.</p>
+  <p class="hint">⚠️ <b>Dùng cùng một mật khẩu trên mọi máy.</b> Quên mật khẩu là không mở được dữ liệu trên Drive (vẫn còn dữ liệu trên từng máy). Hãy ghi mật khẩu ra giấy và cất kỹ. App không lưu lại mật khẩu này.</p>
   <button class="btn" data-a="syncon">Đăng nhập Google & bật đồng bộ</button><p class="hint">App chỉ xin quyền truy cập <b>đúng file do Sổ Lớp tạo</b>, không xem được các file khác trong Drive.</p>`)}
 
 /* ---------- Khởi động ---------- */
