@@ -202,7 +202,7 @@ textarea{min-height:130px;resize:vertical}
 </head>
 <body>
 <aside id="side">
-  <div class="brand"><img src="mark.png" alt=""><div><b>Sổ Lớp</b><small>by Đ-LAB</small></div></div>
+  <div class="brand"><img src="mark.png" alt=""><div><b>Sổ Lớp</b><small id="ver">by Đ-LAB</small></div></div>
   <nav id="sidenav"></nav>
   <div class="foot"><button class="lnk" data-a="donate" style="margin-bottom:10px">☕ Mời Đ-LAB ly cà phê</button><br>Dữ liệu của bạn, do bạn giữ.<br>Đ-LAB · Nơi ý tưởng được tạo nên</div>
 </aside>
@@ -218,7 +218,7 @@ textarea{min-height:130px;resize:vertical}
    Chạy 100% trên máy, không gửi dữ liệu đi đâu.
    Dữ liệu lưu trong IndexedDB (kho của trình duyệt) + bản dự phòng localStorage.
    ========================================================= */
-const VERSION='1.8.0';
+const VERSION='1.8.1';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -397,7 +397,7 @@ function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),allD=debtors(
   <p class="quote">“${esc(quote(x))}”</p>
   <div class="tstats"><span>${ic('cal')}${todayC.length?todayC.length+' buổi hôm nay':'Hôm nay nghỉ dạy'}</span><span>${ic('users')}${S.students.filter(s=>!s.left).length} học sinh</span>${un.length?`<span class="hot">${ic('card')}${un.length} em chưa nộp</span>`:`<span>${ic('check')}Đã thu đủ</span>`}${syncChip()}</div></div>
   <div class="sbox">${ic('search')}<input id="hq" type="search" placeholder="Tìm học sinh, số điện thoại…" value="${esc(qHome)}" autocomplete="off"></div><div id="hres">${homeSearch()}</div>`;
-  if(!S.classes.length)return h+`<div class="card" style="margin-top:18px"><h2>Chào ${esc(S.set.xung)}! Bắt đầu trong 3 bước</h2><p class="sub">1. Thêm lớp (tên, ngày học, giờ, học phí).<br>2. Thêm học sinh (dán cả danh sách cũng được).<br>3. Điểm danh, thu học phí, gửi báo cáo cho phụ huynh.</p><button class="btn" data-a="addcls">+ Thêm lớp đầu tiên</button><button class="btn ln" data-a="restore">Tôi có file sao lưu, khôi phục lại</button><button class="btn ln" data-a="guide">Xem hướng dẫn sử dụng</button></div>`;
+  if(!S.classes.length)return h+`<div class="card" style="margin-top:18px"><h2>Chào ${esc(S.set.xung)}! Bắt đầu trong 3 bước</h2><p class="sub">1. Thêm lớp (tên, ngày học, giờ, học phí).<br>2. Thêm học sinh (dán cả danh sách cũng được).<br>3. Điểm danh, thu học phí, gửi báo cáo cho phụ huynh.</p><button class="btn" data-a="addcls">+ Thêm lớp đầu tiên</button><button class="btn ln" data-a="restore">Tôi có file sao lưu, khôi phục lại</button><button class="btn ln" data-a="guide">Xem hướng dẫn sử dụng</button></div>`+verLine();
   h+=`<div class="lbl">Truy cập nhanh</div><div class="grid">`+[
     {c:'#2453b8',i:'check',t:'Điểm danh',s:todayC.length?`Hôm nay ${todayC.length} lớp`:'Hôm nay không có lớp',a:'attpick'},
     {c:'#f08a24',i:'book',t:'Lớp học',s:`${S.classes.length} lớp`,a:'tab',v:'classes'},
@@ -421,7 +421,9 @@ function vHome(){const t=new Date(),m=cm(),td=today(),un=unpaid(m),allD=debtors(
   const ss=sessions(7).slice(0,6);
   const upH=`<div class="lbl">Lịch dạy sắp tới<button data-a="tab" data-v="classes">Xem tất cả</button></div>`+(ss.length?`<div class="list">${ss.map(x=>{const ds=ymd(x.d),done=S.att[AK(ds,x.c.id)];
     return`<div class="row"><div class="dbad ${x.i?'':'today'}"><small>TH${x.d.getMonth()+1}</small><b>${x.d.getDate()}</b><span>${DN[x.d.getDay()]}</span></div><div class="gr"><b>${esc(x.c.name)}</b><div class="meta"><span>${ic('clock')}${x.c.start} – ${x.c.end}</span>${x.c.place?`<span>${ic('pin')}${esc(x.c.place)}</span>`:''}<span>${ic('users')}${classStu(x.c.id).length}</span></div></div>${x.i?`<span class="chip">${x.i===1?'Ngày mai':'Sắp tới'}</span>`:done?`<button class="btn sm gh" data-a="att" data-id="${x.c.id}">${done.off?'Nghỉ':'✓ Đã điểm danh'}</button>`:`<button class="btn sm" data-a="att" data-id="${x.c.id}">Điểm danh</button>`}</div>`}).join('')}</div>`:'<div class="card">Không có buổi dạy nào trong 7 ngày tới.</div>');
-  return h+`<div class="cols"><div>${todoH}</div><div>${upH}</div></div><p class="hint don">💛 Sổ Lớp miễn phí nhờ sự ủng hộ của thầy cô · <button class="lnk" data-a="donate">Mời Đ-LAB ly cà phê ☕</button></p>`}
+  return h+`<div class="cols"><div>${todoH}</div><div>${upH}</div></div><p class="hint don">💛 Sổ Lớp miễn phí nhờ sự ủng hộ của thầy cô · <button class="lnk" data-a="donate">Mời Đ-LAB ly cà phê ☕</button></p>`+verLine()}
+// Số phiên bản nhỏ ở cuối Trang chủ: nhìn là biết máy đã lên bản mới chưa
+const verLine=()=>`<p class="hint" style="text-align:center;opacity:.75;margin:4px 0 0">Sổ Lớp v${VERSION} · by Đ-LAB</p>`;
 function homeSearch(){const q=qHome.trim().toLowerCase();if(!q)return'';const d=digits(q);
   const r=S.students.filter(s=>s.name.toLowerCase().includes(q)||(d&&digits(s.pp).includes(d))).slice(0,8);
   return`<div class="list" style="margin-top:12px">${r.map(s=>`<div class="row"><i class="av">${esc(initial(s.name))}</i><div class="gr"><b>${esc(s.name)}</b><small>${esc((cls(s.classId)||{}).name||'')}${s.pp?' · '+esc(s.pp):''}</small></div>${s.pp?`<a class="btn sm gh" href="tel:${phoneLocal(s.pp)}">Gọi</a>`:''}<button class="btn sm gh" data-a="edstu" data-id="${s.id}">Mở</button></div>`).join('')||'<div class="row"><small>Không tìm thấy học sinh nào.</small></div>'}</div>`}
@@ -873,7 +875,9 @@ function syncForm(){if(GOOGLE_CLIENT_ID)loadGIS().catch(()=>{});if(!GOOGLE_CLIEN
   <button class="btn" data-a="syncon">Đăng nhập Google & bật đồng bộ</button><p class="hint">App chỉ xin quyền truy cập <b>đúng file do Sổ Lớp tạo</b>, không xem được các file khác trong Drive.</p>`)}
 
 /* ---------- Khởi động ---------- */
-(async()=>{try{history.replaceState({tab:'home'},'')}catch(e){}await load();resetSnap();if(SC.on){syncErr='need';loadGIS().catch(()=>{})}document.title=S.set.title;if(S.pin&&typeof S.pin!=='object')S.pin=null;if(!S.set.ob&&(S.classes.length||S.students.length)){S.set.ob=1;save()}lock();render();if(!S.set.ob&&!S.pin)onboard();
+(async()=>{try{history.replaceState({tab:'home'},'')}catch(e){}await load();resetSnap();if(SC.on){syncErr='need';loadGIS().catch(()=>{})}document.title=S.set.title;if(S.pin&&typeof S.pin!=='object')S.pin=null;if(!S.set.ob&&(S.classes.length||S.students.length)){S.set.ob=1;save()}$('#ver').textContent='by Đ-LAB · v'+VERSION;lock();render();
+  if(S.seen.v!==VERSION){if(S.seen.v)toast('Đã cập nhật Sổ Lớp lên bản '+VERSION+' 🎉');S.seen.v=VERSION;if(S.set.ob)save()}
+  if(!S.set.ob&&!S.pin)onboard();
   try{if(navigator.storage&&navigator.storage.persisted)persisted=await navigator.storage.persisted()}catch(e){}
   if(S.students.length)askPersist();
   if('serviceWorker'in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});

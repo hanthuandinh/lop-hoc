@@ -1,6 +1,6 @@
 // Service worker: lưu sẵn các file của app để mở được khi không có mạng.
 // Không đụng tới dữ liệu học sinh (dữ liệu nằm trong IndexedDB của trình duyệt).
-const CACHE = 'so-lop-v1.8.0';
+const CACHE = 'so-lop-v1.8.1';
 const FILES = ['./', './index.html', './manifest.webmanifest', './qr.js', './privacy.html', './logo.png', './mark.png', './favicon.png', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {
