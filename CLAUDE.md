@@ -48,7 +48,8 @@ Sự kiện dùng ủy quyền: `document.addEventListener('click', ...)` gọi 
 ## Mô hình dữ liệu (`S`, lưu ở IndexedDB `lop-hoc`/`kv`/`state` + localStorage `lop-hoc-v2`)
 - `set`: `{title, xung, name, bin, bank, acc, holder, ob}` — `xung` = Thầy/Cô/…; `title` = tên trung tâm
   (mặc định 'Sổ Lớp'); `ob` = đã qua màn hình chào mừng.
-- `classes[]`: `{id, name, days[0-6], start, end, place, fees:[{from:'YYYY-MM', fee}]}`
+- `classes[]`: `{id, name, days[0-6], start, end, place, fees:[{from:'YYYY-MM', fee, k?}]}`
+  — `k` = số tháng mỗi khóa (2–12; không có = thu theo tháng). Khi có `k`, `fee` là học phí cả khóa. Xem `plan()`.
 - `students[]`: `{id, name, classId, pr, pn, pp, note, fees[], from:'YYYY-MM', d?, left?, ch?}`
   — `d` ngày đóng phí 2–28 (không có = ngày 1, theo tháng dương lịch), lấy từ "Ngày vào học".
   — `ch:[{from:'YYYY-MM', cid}]` lịch sử chuyển lớp (tháng cũ tính học phí theo lớp cũ, xem `clsAt()`).
@@ -87,6 +88,8 @@ Học phí có lịch sử (`fees[]` theo tháng) để đổi học phí không
   **Không làm ô riêng "Lớp ở trường"** (thầy đã quyết định không cần).
 - Kỳ học phí theo ngày vào học: kỳ của tháng m = ngày d tháng m → ngày d-1 tháng sau, **đóng đầu kỳ**
   (hạn = ngày d tháng m). Chưa tới hạn → trạng thái `wait` "Chưa đến hạn", không tính nợ. Xem `feeState()`, `kLabel()`.
+- Lớp thu **theo khóa** (đặt khi tạo lớp, cả lớp cùng hình thức): đóng một lần ở tháng đầu khóa, các tháng
+  còn lại trạng thái `incl` "Đã tính trong khóa"; hết khóa tự sang khóa mới đến khi cho nghỉ học.
 - Nợ học phí dồn: tính từ tháng em vào học (`from`), tối đa 60 tháng, xem `owe()`/`debtors()`.
 
 ## Ý tưởng chưa làm
