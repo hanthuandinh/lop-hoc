@@ -48,14 +48,18 @@ Sự kiện dùng ủy quyền: `document.addEventListener('click', ...)` gọi 
 ## Mô hình dữ liệu (`S`, lưu ở IndexedDB `lop-hoc`/`kv`/`state` + localStorage `lop-hoc-v2`)
 - `set`: `{title, xung, name, bin, bank, acc, holder, ob}` — `xung` = Thầy/Cô/…; `title` = tên trung tâm
   (mặc định 'Sổ Lớp'); `ob` = đã qua màn hình chào mừng.
-- `classes[]`: `{id, name, days[0-6], start, end, place, fees:[{from:'YYYY-MM', fee, k?}]}`
+- `classes[]`: `{id, name, days[0-6], start, end, place, fees:[{from:'YYYY-MM', fee, k?}], arch?}`
+  — `arch:1` lớp đã ngừng (ẩn khỏi điểm danh/lịch/chọn lớp, giữ sổ sách; dùng `AC()` để lấy lớp đang dạy).
+  Lớp đã có khoản thu thì không cho xóa hẳn.
   — `k` = số tháng mỗi khóa (2–12; không có = thu theo tháng). Khi có `k`, `fee` là học phí cả khóa. Xem `plan()`.
 - `students[]`: `{id, name, classId, pr, pn, pp, note, fees[], from:'YYYY-MM', d?, left?, ch?}`
   — `d` ngày đóng phí 2–28 (không có = ngày 1, theo tháng dương lịch), lấy từ "Ngày vào học".
   — `ch:[{from:'YYYY-MM', cid}]` lịch sử chuyển lớp (tháng cũ tính học phí theo lớp cũ, xem `clsAt()`).
+  — `left` tháng cuối còn học (đã nghỉ); `gap:[{from,to}]` các khoảng nghỉ rồi học lại (không tính học phí, xem `enrolled()`).
 - `att{ 'YYYY-MM-DD|classId': {m:{sid:'c'|'p'|'k'}, n:{sid:'lý do'}, t?, cm?, off?} }` — c có mặt, p có phép,
   k không phép; `t` nội dung buổi học, `cm:{sid:'nhận xét'}` (đưa vào báo cáo tháng), `off:1` buổi nghỉ không dạy.
-- `pays[]`: `{id, sid, month:'YYYY-MM', amount, date, how, w?}` — `w:1` = miễn giảm (tính là đã đủ, không tính doanh thu).
+- `pays[]`: `{id, sid, month:'YYYY-MM', amount, date, how, w?, g?}` — `w:1` = miễn giảm (tính là đã đủ, không tính doanh thu);
+  `g` mã nhóm khi một lần thu được tự chia vào nhiều tháng (`allocPay()`), in chung một phiếu thu.
 - `del{}`: "bia mộ" bản ghi đã xóa (cho đồng bộ); mỗi bản ghi có thể có `u` (thời điểm sửa) do `stamp()` gắn.
 - `pin`, `lastBackup`, `seen`, `savedAt`: riêng từng máy, **không đồng bộ**.
 
@@ -81,6 +85,9 @@ Học phí có lịch sử (`fees[]` theo tháng) để đổi học phí không
 **Không dùng `type="number"` cho tiền** — "800.000" sẽ bị hiểu thành 800.
 
 ## Quyết định sản phẩm đã chốt
+- App dành cho **một giáo viên tự quản lý lớp dạy thêm của mình**, không phải phần mềm trung tâm. Không làm
+  nhiều giáo viên, tính lương, phân quyền; **không có báo cáo gửi bên thứ ba** (trung tâm, trường, cấp trên):
+  báo cáo chỉ để giáo viên tự xem hoặc gửi phụ huynh qua Zalo.
 - Thu học phí **theo tháng**, không theo buổi.
 - Nghỉ dạy / dạy bù: chỉ cần mẫu tin "Thông báo chung", không làm tính năng riêng.
 - Phụ huynh không cài app; mọi thứ gửi qua Zalo (sao chép tin, mở zalo.me/SĐT).
